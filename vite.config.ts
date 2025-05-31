@@ -23,8 +23,7 @@ export default defineConfig(({ mode }) => ({
     mode === 'development' && componentTagger(),
   ].filter(Boolean),
   worker: { 
-    format: 'es',
-    plugins: []
+    format: 'es'
   },
   resolve: {
     alias: {

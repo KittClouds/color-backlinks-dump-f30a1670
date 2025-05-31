@@ -3,7 +3,7 @@ import React from 'react';
 import { makePersistedAdapter } from '@livestore/adapter-web';
 import LiveStoreSharedWorker from '@livestore/adapter-web/shared-worker?sharedworker';
 import { LiveStoreProvider } from '@livestore/react';
-import { unstable_batchedUpdates as batchUpdates } from 'react-dom';
+import { batchUpdates, getBatchingInfo } from './utils/reactCompat';
 import App from './App';
 import LiveStoreWorker from './livestore/livestore.worker?worker';
 import { schema } from './livestore/schema';
@@ -15,6 +15,9 @@ const adapter = makePersistedAdapter({
   worker: LiveStoreWorker,
   sharedWorker: LiveStoreSharedWorker,
 });
+
+// Log batching info for debugging
+console.log('[Root] Batching configuration:', getBatchingInfo());
 
 export const Root: React.FC = () => (
   <LiveStoreProvider

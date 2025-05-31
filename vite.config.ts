@@ -9,6 +9,11 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    // Add headers for WASM and worker files
+    headers: {
+      'Cross-Origin-Embedder-Policy': 'credentialless',
+      'Cross-Origin-Opener-Policy': 'same-origin'
+    }
   },
   // Ensure Vite treats .wasm files as assets for proper serving
   assetsInclude: ['**/*.wasm'],
@@ -17,10 +22,16 @@ export default defineConfig(({ mode }) => ({
     livestoreDevtoolsPlugin({ schemaPath: './src/livestore/schema.ts' }),
     mode === 'development' && componentTagger(),
   ].filter(Boolean),
-  worker: { format: 'es' },
+  worker: { 
+    format: 'es',
+    plugins: []
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  optimizeDeps: {
+    exclude: ['kuzu-wasm']
+  }
 }))

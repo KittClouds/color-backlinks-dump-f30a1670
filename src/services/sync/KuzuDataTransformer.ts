@@ -9,7 +9,7 @@ import {
 } from '@/lib/kuzu/types';
 
 /**
- * Data transformation utilities for bidirectional sync between Cytoscape and Kuzu
+ * Streamlined data transformation utilities for bidirectional sync between Cytoscape and Kuzu
  */
 export class KuzuDataTransformer {
   
@@ -22,7 +22,7 @@ export class KuzuDataTransformer {
     const data = element.data;
     const id = data.id as string;
     
-    // Determine node type based on data properties
+    // Determine node type and create appropriate structure
     if (data.type === 'note' || data.title) {
       return {
         id,
@@ -68,34 +68,16 @@ export class KuzuDataTransformer {
   }
   
   /**
-   * Transform Cytoscape edge to Kuzu relationship data
-   */
-  static cytoscapeToKuzuRel(element: ElementDefinition): AllKuzuRels | null {
-    if (element.group !== 'edges') return null;
-    
-    const data = element.data;
-    
-    // Basic relationship structure
-    return {
-      // Most Kuzu relationships don't have additional properties in our schema
-      // The connection is implied by the edge structure itself
-    } as AllKuzuRels;
-  }
-  
-  /**
    * Transform Kuzu node data to Cytoscape ElementDefinition
    */
   static kuzuNodeToCytoscape(kuzuNode: AllKuzuNodes): ElementDefinition {
     const baseElement: ElementDefinition = {
       group: 'nodes',
-      data: {
-        id: kuzuNode.id
-      }
+      data: { id: kuzuNode.id }
     };
     
     // Handle different node types
     if ('title' in kuzuNode && 'content' in kuzuNode) {
-      // KuzuNote
       const note = kuzuNode as KuzuNote;
       baseElement.data = {
         ...baseElement.data,
@@ -111,7 +93,6 @@ export class KuzuDataTransformer {
         parentId: note.parentId
       };
     } else if ('kind' in kuzuNode && 'label' in kuzuNode) {
-      // KuzuEntity
       const entity = kuzuNode as KuzuEntity;
       baseElement.data = {
         ...baseElement.data,
@@ -122,7 +103,6 @@ export class KuzuDataTransformer {
         embedding: entity.embedding
       };
     } else if ('title' in kuzuNode && !('content' in kuzuNode)) {
-      // KuzuCluster
       const cluster = kuzuNode as KuzuCluster;
       baseElement.data = {
         ...baseElement.data,
@@ -168,15 +148,17 @@ export class KuzuDataTransformer {
     const data = element.data;
     
     // Map common edge types to Kuzu relationship types
-    if (data.type === 'contains' || data.label === 'CONTAINS') return 'CONTAINS';
-    if (data.type === 'mentions' || data.label === 'MENTIONS') return 'MENTIONS';
-    if (data.type === 'links_to' || data.label === 'LINKS_TO') return 'LINKS_TO';
-    if (data.type === 'has_tag' || data.label === 'HAS_TAG') return 'HAS_TAG';
-    if (data.type === 'in_cluster' || data.label === 'IN_CLUSTER') return 'IN_CLUSTER';
-    if (data.type === 'mentioned_in' || data.label === 'MENTIONED_IN') return 'MENTIONED_IN';
-    if (data.type === 'co_occurs' || data.label === 'CO_OCCURS') return 'CO_OCCURS';
+    const typeMap: Record<string, string> = {
+      'contains': 'CONTAINS',
+      'mentions': 'MENTIONS', 
+      'links_to': 'LINKS_TO',
+      'has_tag': 'HAS_TAG',
+      'in_cluster': 'IN_CLUSTER',
+      'mentioned_in': 'MENTIONED_IN',
+      'co_occurs': 'CO_OCCURS'
+    };
     
-    return 'LINKS_TO'; // Default relationship type
+    return typeMap[data.type] || typeMap[data.label?.toLowerCase()] || 'LINKS_TO';
   }
   
   /**
@@ -187,7 +169,7 @@ export class KuzuDataTransformer {
     const params: Record<string, any> = { id: nodeData.id };
     
     // Build SET clauses based on node type
-    let setClauses: string[] = [];
+    const setClauses: string[] = [];
     
     if ('title' in nodeData && nodeData.title) {
       setClauses.push('n.title = $title');

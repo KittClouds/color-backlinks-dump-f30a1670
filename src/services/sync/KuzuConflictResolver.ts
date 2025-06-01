@@ -50,7 +50,7 @@ export class KuzuConflictResolver {
         case 'kuzu_priority':
           return {
             strategy: 'kuzu_wins',
-            resolvedData: conflict.kuzuData,
+            resolvedData: this.isKuzuNode(conflict.kuzuData) ? conflict.kuzuData : undefined,
             requiresManualIntervention: false,
             conflictDetails: 'Kuzu data takes priority by configuration'
           };
@@ -126,7 +126,7 @@ export class KuzuConflictResolver {
     if (kuzuTime > cytoscapeTime) {
       return {
         strategy: 'kuzu_wins',
-        resolvedData: conflict.kuzuData,
+        resolvedData: this.isKuzuNode(conflict.kuzuData) ? conflict.kuzuData : undefined,
         requiresManualIntervention: false,
         conflictDetails: `Kuzu data is newer (${new Date(kuzuTime).toISOString()} > ${new Date(cytoscapeTime).toISOString()})`
       };
@@ -144,9 +144,9 @@ export class KuzuConflictResolver {
   }
   
   private static attemptMerge(conflict: SyncConflict): ConflictResolution {
-    if (conflict.type === 'node') {
+    if (conflict.type === 'node' && this.isKuzuNode(conflict.kuzuData)) {
       try {
-        const mergedData = this.mergeNodeData(conflict.cytoscapeData, conflict.kuzuData as AllKuzuNodes);
+        const mergedData = this.mergeNodeData(conflict.cytoscapeData, conflict.kuzuData);
         return {
           strategy: 'merge',
           resolvedData: mergedData,
@@ -169,8 +169,8 @@ export class KuzuConflictResolver {
     const merged = { ...kuzuNode };
     
     // Merge non-conflicting properties from Cytoscape
-    if (cytoscapeData.title && !merged.title) {
-      (merged as any).title = cytoscapeData.title;
+    if (cytoscapeData.title && !this.getNodeTitle(merged)) {
+      this.setNodeTitle(merged, cytoscapeData.title);
     }
     
     if (cytoscapeData.label && 'label' in merged && !merged.label) {
@@ -238,8 +238,11 @@ export class KuzuConflictResolver {
     const cytoscapeData = cytoscapeElement.data;
     
     // Compare key fields that should match
-    if (cytoscapeData.title && 'title' in kuzuData && kuzuData.title !== cytoscapeData.title) {
-      return true;
+    if (cytoscapeData.title && this.isKuzuNode(kuzuData)) {
+      const kuzuTitle = this.getNodeTitle(kuzuData);
+      if (kuzuTitle && kuzuTitle !== cytoscapeData.title) {
+        return true;
+      }
     }
     
     if (cytoscapeData.label && 'label' in kuzuData && kuzuData.label !== cytoscapeData.label) {
@@ -251,6 +254,35 @@ export class KuzuConflictResolver {
     }
     
     return false;
+  }
+  
+  // Type guard to check if kuzuData is a node
+  private static isKuzuNode(kuzuData: AllKuzuNodes | AllKuzuRels): kuzuData is AllKuzuNodes {
+    return 'id' in kuzuData && (
+      'title' in kuzuData || 
+      'label' in kuzuData || 
+      'kind' in kuzuData ||
+      'name' in kuzuData
+    );
+  }
+  
+  // Helper to get title from various node types
+  private static getNodeTitle(node: AllKuzuNodes): string | undefined {
+    if ('title' in node) return node.title;
+    if ('label' in node) return node.label;
+    if ('name' in node) return node.name;
+    return undefined;
+  }
+  
+  // Helper to set title on various node types
+  private static setNodeTitle(node: AllKuzuNodes, title: string): void {
+    if ('title' in node) {
+      (node as any).title = title;
+    } else if ('label' in node) {
+      (node as any).label = title;
+    } else if ('name' in node) {
+      (node as any).name = title;
+    }
   }
   
   /**

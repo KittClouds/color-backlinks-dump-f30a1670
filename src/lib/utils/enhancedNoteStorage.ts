@@ -11,20 +11,22 @@ export const enhancedNoteStorage = {
    */
   saveNote(note: Note): boolean {
     try {
-      // Use jsonManager directly instead of EnhancedNoteSerializer
-      const result = jsonManager.serialize('note', note as any);
-      if (result.success && result.data) {
-        localStorage.setItem(`note-${note.id}`, JSON.stringify(result.data));
-        console.log(`enhancedNoteStorage: Successfully saved note ${note.id}`);
-        return true;
-      } else {
-        console.warn('enhancedNoteStorage: Note serialization failed, attempting to save anyway');
-        localStorage.setItem(`note-${note.id}`, JSON.stringify(note));
-        return true;
-      }
+      // Use jsonManager.serialize which returns a string directly
+      const serializedData = jsonManager.serialize('note', note);
+      localStorage.setItem(`note-${note.id}`, serializedData);
+      console.log(`enhancedNoteStorage: Successfully saved note ${note.id}`);
+      return true;
     } catch (error) {
       console.error('enhancedNoteStorage: Failed to save note:', error);
-      return false;
+      // Fallback to direct JSON storage
+      try {
+        localStorage.setItem(`note-${note.id}`, JSON.stringify(note));
+        console.warn('enhancedNoteStorage: Saved note with fallback method');
+        return true;
+      } catch (fallbackError) {
+        console.error('enhancedNoteStorage: Fallback save also failed:', fallbackError);
+        return false;
+      }
     }
   },
 
@@ -36,20 +38,23 @@ export const enhancedNoteStorage = {
       const jsonString = localStorage.getItem(`note-${noteId}`);
       if (!jsonString) return null;
       
-      const json = JSON.parse(jsonString);
-      
-      // Try to deserialize using jsonManager
-      const result = jsonManager.deserialize('note', json);
-      if (result.success && result.data) {
-        console.log(`enhancedNoteStorage: Successfully loaded note ${noteId}`);
-        return result.data as Note;
-      } else {
-        console.warn(`enhancedNoteStorage: Deserialization failed for note ${noteId}, returning raw data`);
-        return json as Note;
-      }
+      // Try to deserialize using jsonManager (returns data directly)
+      const data = jsonManager.deserialize('note', jsonString);
+      console.log(`enhancedNoteStorage: Successfully loaded note ${noteId}`);
+      return data as Note;
     } catch (error) {
       console.error('enhancedNoteStorage: Failed to load note:', error);
-      return null;
+      // Fallback to direct JSON parsing
+      try {
+        const jsonString = localStorage.getItem(`note-${noteId}`);
+        if (!jsonString) return null;
+        const data = JSON.parse(jsonString);
+        console.warn(`enhancedNoteStorage: Loaded note ${noteId} with fallback method`);
+        return data as Note;
+      } catch (fallbackError) {
+        console.error('enhancedNoteStorage: Fallback load also failed:', fallbackError);
+        return null;
+      }
     }
   },
 
@@ -93,9 +98,9 @@ export const enhancedNoteStorage = {
       try {
         const jsonString = localStorage.getItem(`note-${noteId}`);
         if (jsonString) {
-          const json = JSON.parse(jsonString);
-          const result = jsonManager.validate('note', json);
-          if (result.success) {
+          // Use validateJSON method instead of validate
+          const isValid = jsonManager.validateJSON('note', jsonString);
+          if (isValid) {
             valid.push(noteId);
           } else {
             invalid.push(noteId);

@@ -300,9 +300,10 @@ export class GraphService implements IGraphService {
   toSerializableGraph(sourceText?: string, metadata?: Record<string, any>): GraphDocument {
     const graphJson = this.exportGraph();
     
-    // Create a proper GraphDocument with required properties
-    const graphDocument: GraphDocument = {
+    // Use the serialization methods to properly create a GraphDocument
+    return {
       gn_namespace: 'graph-app',
+      gn_id: `graph-${Date.now()}`,
       vertices: new Map(),
       edges: new Map(),
       metadata: {
@@ -317,10 +318,11 @@ export class GraphService implements IGraphService {
       getVertex: () => undefined,
       getEdge: () => undefined,
       hasVertex: () => false,
-      hasEdge: () => false
-    } as GraphDocument;
-    
-    return graphDocument;
+      hasEdge: () => false,
+      renameProperties: () => {},
+      validate: () => true,
+      copy: function() { return this; }
+    } as unknown as GraphDocument;
   }
 
   /**

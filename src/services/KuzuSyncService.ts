@@ -100,8 +100,8 @@ export class KuzuSyncService {
       await this.changeDetector.initialize();
       
       // Register GraphService change listener with correct signature
-      this.graphService.addChangeListener((changes: { added: ElementDefinition[]; modified: ElementDefinition[]; removed: ElementDefinition[] }) => {
-        this.handleGraphServiceChanges(changes);
+      this.graphService.addChangeListener((elements: ElementDefinition[]) => {
+        this.handleGraphServiceChanges(elements);
       });
       
       // Start periodic Kuzu change detection
@@ -119,43 +119,17 @@ export class KuzuSyncService {
   /**
    * Handle changes from GraphService (Cytoscape → Kuzu)
    */
-  private handleGraphServiceChanges(changes: { added: ElementDefinition[]; modified: ElementDefinition[]; removed: ElementDefinition[] }): void {
+  private handleGraphServiceChanges(elements: ElementDefinition[]): void {
     if (!this.isInitialized || this.isSyncing) return;
     
-    console.log(`KuzuSyncService: Handling ${changes.added.length + changes.modified.length + changes.removed.length} GraphService changes`);
+    console.log(`KuzuSyncService: Handling ${elements.length} GraphService changes`);
     
-    // Queue operations for added elements
-    for (const element of changes.added) {
-      this.queueOperation({
-        id: this.generateOperationId(),
-        type: element.group === 'nodes' ? 'node' : 'edge',
-        operation: 'CREATE',
-        direction: 'cytoscape_to_kuzu',
-        elementId: element.data.id,
-        timestamp: Date.now(),
-        status: 'pending'
-      });
-    }
-    
-    // Queue operations for modified elements
-    for (const element of changes.modified) {
+    // Simple approach: treat all elements as modifications for now
+    for (const element of elements) {
       this.queueOperation({
         id: this.generateOperationId(),
         type: element.group === 'nodes' ? 'node' : 'edge',
         operation: 'UPDATE',
-        direction: 'cytoscape_to_kuzu',
-        elementId: element.data.id,
-        timestamp: Date.now(),
-        status: 'pending'
-      });
-    }
-    
-    // Queue operations for removed elements
-    for (const element of changes.removed) {
-      this.queueOperation({
-        id: this.generateOperationId(),
-        type: element.group === 'nodes' ? 'node' : 'edge',
-        operation: 'DELETE',
         direction: 'cytoscape_to_kuzu',
         elementId: element.data.id,
         timestamp: Date.now(),

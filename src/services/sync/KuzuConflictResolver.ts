@@ -1,4 +1,3 @@
-
 import { ElementDefinition } from 'cytoscape';
 import { AllKuzuNodes, AllKuzuRels } from '@/lib/kuzu/types';
 import { jsonSafetyManager } from '@/json-manager/SafetyManager';
@@ -225,10 +224,10 @@ export class KuzuConflictResolver {
   
   private static extractKuzuTimestamp(kuzuData: AllKuzuNodes | AllKuzuRels): number | null {
     if ('updatedAt' in kuzuData && kuzuData.updatedAt) {
-      return new Date(kuzuData.updatedAt).getTime();
+      return new Date(kuzuData.updatedAt as string).getTime();
     }
     if ('createdAt' in kuzuData && kuzuData.createdAt) {
-      return new Date(kuzuData.createdAt).getTime();
+      return new Date(kuzuData.createdAt as string).getTime();
     }
     
     return null;

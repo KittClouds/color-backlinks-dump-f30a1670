@@ -2,7 +2,7 @@ import cytoscape, { Core, NodeSingular, EdgeSingular, NodeCollection, EdgeCollec
 import undoRedo from 'cytoscape-undo-redo';
 import automove from 'cytoscape-automove';
 import { NodeType, EdgeType, GraphJSON, GraphMeta, IGraphService, Thread, ThreadMessage, Triple } from './types';
-import { Note, Cluster, CLUSTERS_ROOT_ID, STANDARD_ROOT_ID } from '@/lib/store';
+import { Note, Cluster, STANDARD_ROOT_ID } from '@/lib/store';
 import { Entity } from '@/lib/utils/parsingUtils';
 import { GraphDocument } from '@/lib/langchain-lite';
 import { EntityWithReferences } from "@/components/entity-browser/EntityBrowser";
@@ -12,9 +12,12 @@ import { TypedAttribute } from '@/types/attributes';
 cytoscape.use(undoRedo);
 cytoscape.use(automove);
 
+// Define CLUSTERS_ROOT_ID locally since it's not exported from store
+const CLUSTERS_ROOT_ID = 'clusters-root';
+
 export class GraphService implements IGraphService {
   private graph: Core;
-  private changeListeners: Array<(changes: { added: ElementDefinition[]; modified: ElementDefinition[]; removed: ElementDefinition[] }) => void> = [];
+  private changeListeners: Array<(elements: ElementDefinition[]) => void> = [];
 
   constructor() {
     // Initialize the graph
@@ -261,7 +264,10 @@ export class GraphService implements IGraphService {
     const elements: ElementDefinition[] = this.graph.elements().map(ele => this.exportElement(ele));
 
     const layout = {}; // Implement layout export if needed
-    const viewport = this.graph.viewport();
+    const viewport = {
+      zoom: this.graph.zoom(),
+      pan: this.graph.pan()
+    };
 
     return { meta, elements, layout, viewport };
   }
@@ -278,7 +284,7 @@ export class GraphService implements IGraphService {
    * Export a single element to JSON
    */
   exportElement(ele: SingularElementArgument): ElementDefinition {
-    return ele.json();
+    return ele.json() as ElementDefinition;
   }
 
   /**
@@ -294,10 +300,10 @@ export class GraphService implements IGraphService {
   toSerializableGraph(sourceText?: string, metadata?: Record<string, any>): GraphDocument {
     const graphJson = this.exportGraph();
     return {
-      pageContent: sourceText || '',
       metadata: {
         ...metadata,
-        graph: graphJson
+        graph: graphJson,
+        content: sourceText || ''
       }
     };
   }
@@ -680,15 +686,13 @@ export class GraphService implements IGraphService {
     // Add standard root
     this.addNote({
       id: STANDARD_ROOT_ID,
-      title: 'Notes',
-      type: NodeType.STANDARD_ROOT
+      title: 'Notes'
     });
 
     // Add clusters root
     this.addNote({
       id: CLUSTERS_ROOT_ID,
-      title: 'Clusters',
-      type: NodeType.CLUSTERS_ROOT
+      title: 'Clusters'
     });
 
     // Add clusters
@@ -710,6 +714,7 @@ export class GraphService implements IGraphService {
       id: node.id(),
       title: node.data('title'),
       content: node.data('content'),
+      type: 'note' as const,
       createdAt: node.data('createdAt'),
       updatedAt: node.data('updatedAt'),
       path: node.data('path'),
@@ -811,6 +816,76 @@ export class GraphService implements IGraphService {
   }
 
   /**
+   * Start batch operations (for GraphStructureSynthesizer compatibility)
+   */
+  startBatchOperations(): void {
+    // Enable batch mode for performance
+    this.graph.batch();
+  }
+
+  /**
+   * End batch operations (for GraphStructureSynthesizer compatibility)
+   */
+  endBatchOperations(): void {
+    // End batch mode
+    this.graph.unbatch();
+  }
+
+  /**
+   * Upsert co-occurrence edge (for GraphStructureSynthesizer compatibility)
+   */
+  upsertCoOccurrenceEdge(entity1Id: string, entity2Id: string, data: { count: number; noteIds: Set<string> }): void {
+    const edgeId = `${entity1Id}-co_occurs-${entity2Id}`;
+    
+    // Remove existing edge if it exists
+    this.graph.getElementById(edgeId).remove();
+    
+    // Add new edge
+    this.graph.add({
+      group: 'edges',
+      data: {
+        id: edgeId,
+        source: entity1Id,
+        target: entity2Id,
+        type: EdgeType.CO_OCCURS,
+        count: data.count,
+        noteIds: Array.from(data.noteIds)
+      }
+    });
+  }
+
+  /**
+   * Upsert global triple node (for GraphStructureSynthesizer compatibility)
+   */
+  upsertGlobalTripleNode(canonicalKey: string, data: { subject: any; predicate: string; object: any; noteIds: Set<string> }): void {
+    // Remove existing node if it exists
+    this.graph.getElementById(canonicalKey).remove();
+    
+    // Add new node
+    this.graph.add({
+      group: 'nodes',
+      data: {
+        id: canonicalKey,
+        type: NodeType.GLOBAL_TRIPLE,
+        predicate: data.predicate,
+        subject: data.subject,
+        object: data.object,
+        noteIds: Array.from(data.noteIds)
+      }
+    });
+  }
+
+  /**
+   * Remove element (for KuzuSyncService compatibility)
+   */
+  removeElement(elementId: string): void {
+    const element = this.graph.getElementById(elementId);
+    if (!element.empty()) {
+      element.remove();
+    }
+  }
+
+  /**
    * Set up change detection for sync purposes
    */
   private setupChangeDetection(): void {
@@ -824,15 +899,10 @@ export class GraphService implements IGraphService {
    */
   private notifyChangeListeners(): void {
     const elements = this.graph.elements().map(ele => this.exportElement(ele));
-    const changes = {
-      added: elements, // Simplified - real implementation would track actual changes
-      modified: [],
-      removed: []
-    };
     
     this.changeListeners.forEach(listener => {
       try {
-        listener(changes);
+        listener(elements);
       } catch (error) {
         console.error('Change listener error:', error);
       }
@@ -842,14 +912,14 @@ export class GraphService implements IGraphService {
   /**
    * Add a change listener for sync purposes
    */
-  addChangeListener(listener: (changes: { added: ElementDefinition[]; modified: ElementDefinition[]; removed: ElementDefinition[] }) => void): void {
+  addChangeListener(listener: (elements: ElementDefinition[]) => void): void {
     this.changeListeners.push(listener);
   }
 
   /**
    * Remove a change listener
    */
-  removeChangeListener(listener: (changes: { added: ElementDefinition[]; modified: ElementDefinition[]; removed: ElementDefinition[] }) => void): void {
+  removeChangeListener(listener: (elements: ElementDefinition[]) => void): void {
     const index = this.changeListeners.indexOf(listener);
     if (index > -1) {
       this.changeListeners.splice(index, 1);

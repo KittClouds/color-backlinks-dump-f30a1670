@@ -372,7 +372,9 @@ export const GraphProvider: React.FC<{children: React.ReactNode}> = ({ children 
     
     getEntityRelationships: (kind: string, label: string) => {
       return graphService.getEntityRelationships ? graphService.getEntityRelationships(kind, label) : [];
-    }
+    },
+    
+    kuzuSyncService
   };
 
   return (

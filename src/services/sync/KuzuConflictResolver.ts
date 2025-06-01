@@ -1,3 +1,4 @@
+
 import { ElementDefinition } from 'cytoscape';
 import { AllKuzuNodes, AllKuzuRels } from '@/lib/kuzu/types';
 import { jsonSafetyManager } from '@/json-manager/SafetyManager';
@@ -267,9 +268,9 @@ export class KuzuConflictResolver {
   
   // Helper to get title from various node types
   private static getNodeTitle(node: AllKuzuNodes): string | undefined {
-    if ('title' in node) return node.title;
-    if ('label' in node) return node.label;
-    if ('name' in node) return node.name;
+    if ('title' in node) return node.title as string;
+    if ('label' in node) return node.label as string;
+    if ('name' in node) return node.name as string;
     return undefined;
   }
   

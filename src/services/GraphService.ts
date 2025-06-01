@@ -18,6 +18,8 @@ const CLUSTERS_ROOT_ID = 'clusters-root';
 export class GraphService implements IGraphService {
   private graph: Core;
   private changeListeners: Array<(elements: ElementDefinition[]) => void> = [];
+  private urInstance: any;
+  private batchCount: number = 0;
 
   constructor() {
     // Initialize the graph
@@ -215,7 +217,7 @@ export class GraphService implements IGraphService {
     });
 
     // Initialize undo/redo
-    const ur = this.graph.undoRedo({});
+    this.urInstance = this.graph.undoRedo();
     
     // Set up change detection
     this.setupChangeDetection();
@@ -232,16 +234,14 @@ export class GraphService implements IGraphService {
    * Perform undo operation
    */
   undo(): void {
-    const ur = this.graph.undoRedo({});
-    ur.undo();
+    this.urInstance.undo();
   }
 
   /**
    * Perform redo operation
    */
   redo(): void {
-    const ur = this.graph.undoRedo({});
-    ur.redo();
+    this.urInstance.redo();
   }
 
   /**
@@ -299,13 +299,28 @@ export class GraphService implements IGraphService {
    */
   toSerializableGraph(sourceText?: string, metadata?: Record<string, any>): GraphDocument {
     const graphJson = this.exportGraph();
-    return {
+    
+    // Create a proper GraphDocument with required properties
+    const graphDocument: GraphDocument = {
+      gn_namespace: 'graph-app',
+      vertices: new Map(),
+      edges: new Map(),
       metadata: {
         ...metadata,
         graph: graphJson,
         content: sourceText || ''
-      }
-    };
+      },
+      toJSON: () => ({}),
+      fromJSON: () => {},
+      addVertex: () => {},
+      addEdge: () => {},
+      getVertex: () => undefined,
+      getEdge: () => undefined,
+      hasVertex: () => false,
+      hasEdge: () => false
+    } as GraphDocument;
+    
+    return graphDocument;
   }
 
   /**
@@ -537,12 +552,13 @@ export class GraphService implements IGraphService {
     const tag = this.graph.nodes(`[title = "${tagName}"][type = "${NodeType.TAG}"]`);
     if (tag.empty()) return false;
 
+    const tagNode = tag.first();
     this.graph.add({
       group: 'edges',
       data: {
-        id: `${noteId}-has_tag-${tag.id()}`,
+        id: `${noteId}-has_tag-${tagNode.id()}`,
         source: noteId,
-        target: tag.id(),
+        target: tagNode.id(),
         type: EdgeType.HAS_TAG
       }
     });
@@ -589,12 +605,13 @@ export class GraphService implements IGraphService {
     tags.forEach(tagName => {
       const tag = this.graph.nodes(`[title = "${tagName}"][type = "${NodeType.TAG}"]`);
       if (!tag.empty()) {
+        const tagNode = tag.first();
         this.graph.add({
           group: 'edges',
           data: {
-            id: `${noteId}-has_tag-${tag.id()}`,
+            id: `${noteId}-has_tag-${tagNode.id()}`,
             source: noteId,
-            target: tag.id(),
+            target: tagNode.id(),
             type: EdgeType.HAS_TAG
           }
         });
@@ -819,16 +836,20 @@ export class GraphService implements IGraphService {
    * Start batch operations (for GraphStructureSynthesizer compatibility)
    */
   startBatchOperations(): void {
-    // Enable batch mode for performance
-    this.graph.batch();
+    if (this.batchCount === 0) {
+      this.graph.startBatch();
+    }
+    this.batchCount++;
   }
 
   /**
    * End batch operations (for GraphStructureSynthesizer compatibility)
    */
   endBatchOperations(): void {
-    // End batch mode
-    this.graph.unbatch();
+    this.batchCount = Math.max(0, this.batchCount - 1);
+    if (this.batchCount === 0) {
+      this.graph.endBatch();
+    }
   }
 
   /**

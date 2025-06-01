@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { graphService } from '../services/GraphService';
 import { syncManager } from '../services/SyncManager';
@@ -25,6 +24,8 @@ import { schema } from '@/lib/schema';
 import { Entity } from '@/lib/utils/parsingUtils';
 import { EntityWithReferences } from '@/components/entity-browser/EntityBrowser';
 import { SchemaDefinitions } from '@/lib/schema';
+import { KuzuSyncService } from '@/services/KuzuSyncService';
+import { useKuzu } from '@/hooks/useKuzu';
 
 interface GraphContextType {
   importNotes: () => void;
@@ -59,6 +60,7 @@ interface GraphContextType {
   createEntity: (entity: Entity) => boolean;
   getEntityReferences: (kind: string, label: string) => {id: string, title: string}[];
   getEntityRelationships: (kind: string, label: string) => any[];
+  kuzuSyncService: KuzuSyncService | null;
 }
 
 const GraphContext = createContext<GraphContextType | undefined>(undefined);
@@ -81,6 +83,9 @@ export const GraphProvider: React.FC<{children: React.ReactNode}> = ({ children 
   const previousLinksMap = useRef(linksMap);
   const previousEntitiesMap = useRef(entitiesMap);
   const previousTriplesMap = useRef(triplesMap);
+
+  const { schemaManager, conn, isReady } = useKuzu();
+  const [kuzuSyncService, setKuzuSyncService] = useState<KuzuSyncService | null>(null);
 
   // Load schema from storage on mount
   useEffect(() => {
@@ -193,6 +198,34 @@ export const GraphProvider: React.FC<{children: React.ReactNode}> = ({ children 
     previousTriplesMap.current = triplesMap;
 
   }, [tagsMap, mentionsMap, linksMap, entitiesMap, triplesMap, initialized]);
+
+  // Initialize Kuzu sync service when ready
+  useEffect(() => {
+    if (isReady && graphService && schemaManager && conn && !kuzuSyncService) {
+      const initializeKuzuSync = async () => {
+        try {
+          console.log('GraphContext: Initializing Kuzu sync service...');
+          
+          // Create KuzuGraphStore instance
+          const { KuzuGraphStore } = await import('@/lib/kuzu/KuzuGraphStore');
+          const kuzuStore = new KuzuGraphStore(conn, schemaManager);
+          await kuzuStore.initialize();
+          
+          // Initialize sync service
+          const syncService = KuzuSyncService.getInstance(graphService, kuzuStore, schemaManager);
+          await syncService.initialize();
+          
+          setKuzuSyncService(syncService);
+          console.log('GraphContext: Kuzu sync service initialized successfully');
+          
+        } catch (error) {
+          console.error('GraphContext: Failed to initialize Kuzu sync service:', error);
+        }
+      };
+      
+      initializeKuzuSync();
+    }
+  }, [isReady, graphService, schemaManager, conn, kuzuSyncService]);
 
   const value: GraphContextType = {
     importNotes: () => {

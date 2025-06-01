@@ -13,6 +13,7 @@ import { GraphSerializer } from './GraphSerializer';
 import { GraphDocument } from '@/lib/langchain-lite';
 import { graphSerializationMethods } from './graphSerializationMethods';
 import { extendGraphService } from './GraphServiceExtension';
+import { EventEmitter } from 'events';
 
 cytoscape.use(automove);
 cytoscape.use(undoRedo);
@@ -25,7 +26,7 @@ interface UndoRedoInstance {
   lastAction: () => { name: string; result: any } | undefined;
 }
 
-export class GraphService implements IGraphService {
+export class GraphService extends EventEmitter implements IGraphService {
   private cy: Core;
   private ur: UndoRedoInstance;
   private titleIndex = new Map<string, string>();
@@ -1242,6 +1243,63 @@ export class GraphService implements IGraphService {
    */
   public endBatchOperations(): void {
     this.cy.endBatch();
+  }
+
+  /**
+   * Get a specific element by ID
+   */
+  getElement(id: string): ElementDefinition | null {
+    if (!this.cy) return null;
+    
+    const element = this.cy.getElementById(id);
+    if (element.length === 0) return null;
+    
+    return {
+      group: element.isNode() ? 'nodes' : 'edges',
+      data: element.data(),
+      position: element.isNode() ? element.position() : undefined,
+      style: element.style()
+    } as ElementDefinition;
+  }
+
+  /**
+   * Remove element by ID
+   */
+  removeElement(id: string): void {
+    if (!this.cy) return;
+    
+    const element = this.cy.getElementById(id);
+    if (element.length > 0) {
+      element.remove();
+      console.log(`GraphService: Removed element ${id}`);
+    }
+  }
+
+  /**
+   * Import a single element into the graph
+   */
+  importElement(element: ElementDefinition): void {
+    if (!this.cy) return;
+    
+    try {
+      // Check if element already exists
+      const existing = this.cy.getElementById(element.data.id);
+      
+      if (existing.length > 0) {
+        // Update existing element
+        existing.data(element.data);
+        if (element.position && existing.isNode()) {
+          existing.position(element.position);
+        }
+      } else {
+        // Add new element
+        this.cy.add(element);
+      }
+      
+      console.log(`GraphService: Imported element ${element.data.id}`);
+    } catch (error) {
+      console.error(`GraphService: Failed to import element ${element.data.id}:`, error);
+    }
   }
 }
 

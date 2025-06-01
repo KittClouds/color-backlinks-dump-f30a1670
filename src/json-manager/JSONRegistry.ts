@@ -1,4 +1,3 @@
-
 import { jsonManager } from './JSONManager';
 import { 
   blockNoteAdapter, 
@@ -38,7 +37,7 @@ export class JSONRegistry {
     // Initialize unified adapters and namespace mappings
     initializeUnifiedAdapters();
     
-    // Register all adapters including new Kuzu ones
+    // Register all adapters including new Kuzu ones and sync adapters
     jsonManager.registerAdapter('blocknote', blockNoteAdapter);
     jsonManager.registerAdapter('cytoscape', cytoscapeAdapter);
     jsonManager.registerAdapter('entity', entityAdapter);
@@ -47,6 +46,7 @@ export class JSONRegistry {
     jsonManager.registerAdapter('compatibility', backwardCompatibilityAdapter);
     jsonManager.registerAdapter('kuzu', kuzuAdapter);
     jsonManager.registerAdapter('kuzu_sync', kuzuSyncAdapter);
+    jsonManager.registerAdapter('kuzu_sync_operation', kuzuSyncAdapter); // Add sync operation adapter
     
     // Set up periodic cleanup
     setInterval(() => {

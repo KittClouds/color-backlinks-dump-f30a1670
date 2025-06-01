@@ -1,3 +1,4 @@
+
 import cytoscape, { Core, NodeSingular, EdgeSingular, NodeCollection, EdgeCollection, ElementDefinition, SingularElementArgument, Position } from 'cytoscape';
 import undoRedo from 'cytoscape-undo-redo';
 import automove from 'cytoscape-automove';
@@ -31,15 +32,15 @@ export class GraphService implements IGraphService {
           style: {
             'background-color': '#4287f5',
             'label': 'data(title)',
-            'font-size': '12px',
+            'font-size': 12,
             'text-valign': 'center',
             'text-halign': 'center',
             'color': '#fff',
-            'width': '80px',
-            'height': '80px',
+            'width': 80,
+            'height': 80,
             'overlay-opacity': 0,
             'transition-property': 'overlay-opacity',
-            'transition-duration': '0.2s'
+            'transition-duration': 0.2
           }
         },
         {
@@ -65,8 +66,8 @@ export class GraphService implements IGraphService {
             'shape': 'roundrectangle',
             'label': 'data(title)',
             'color': '#333',
-            'width': '80px',
-            'height': '80px'
+            'width': 80,
+            'height': 80
           }
         },
         {
@@ -76,8 +77,8 @@ export class GraphService implements IGraphService {
             'shape': 'roundrectangle',
             'label': 'data(title)',
             'color': '#333',
-            'width': '80px',
-            'height': '80px'
+            'width': 80,
+            'height': 80
           }
         },
         {
@@ -87,8 +88,8 @@ export class GraphService implements IGraphService {
             'shape': 'roundrectangle',
             'label': 'data(title)',
             'color': '#333',
-            'width': '80px',
-            'height': '80px'
+            'width': 80,
+            'height': 80
           }
         },
         {
@@ -98,8 +99,8 @@ export class GraphService implements IGraphService {
             'shape': 'ellipse',
             'label': 'data(title)',
             'color': '#fff',
-            'width': '80px',
-            'height': '80px'
+            'width': 80,
+            'height': 80
           }
         },
         {
@@ -127,8 +128,8 @@ export class GraphService implements IGraphService {
             'shape': 'roundrectangle',
             'label': 'data(title)',
             'color': '#fff',
-            'width': '80px',
-            'height': '80px'
+            'width': 80,
+            'height': 80
           }
         },
         {
@@ -138,8 +139,8 @@ export class GraphService implements IGraphService {
             'shape': 'roundrectangle',
             'label': 'data(content)',
             'color': '#333',
-            'width': '60px',
-            'height': '60px'
+            'width': 60,
+            'height': 60
           }
         },
         {
@@ -167,8 +168,8 @@ export class GraphService implements IGraphService {
             'shape': 'ellipse',
             'label': 'data(label)',
             'color': '#fff',
-            'width': '60px',
-            'height': '60px'
+            'width': 60,
+            'height': 60
           }
         },
         {
@@ -196,8 +197,8 @@ export class GraphService implements IGraphService {
             'shape': 'roundrectangle',
             'label': 'data(predicate)',
             'color': '#fff',
-            'width': '60px',
-            'height': '60px'
+            'width': 60,
+            'height': 60
           }
         },
         {

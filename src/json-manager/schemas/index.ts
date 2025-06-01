@@ -1,31 +1,40 @@
+
 import { jsonSchemaRegistry } from './JSONSchemaRegistry';
-import { blockNoteSchemaV1 } from './BlockNoteSchema';
-import { entitySchemaV1 } from './EntitySchema';
-import { noteSchemaV1 } from './NoteSchema';
-import { cytoscapeSchemaV1 } from './CytoscapeSchema';
-import { liveStoreSchemaV1 } from './LiveStoreSchema';
+import { blockNoteSchemas } from './BlockNoteSchema';
+import { cytoscapeSchemas } from './CytoscapeSchema';
+import { entitySchemas } from './EntitySchema';
+import { noteSchemas } from './NoteSchema';
+import { liveStoreSchemas } from './LiveStoreSchema';
+import { kuzuSchemas } from './KuzuSchema';
 
 /**
- * Initialize all JSON schemas including unified and LiveStore schemas
+ * Initialize all schema registrations
  */
 export function initializeSchemas(): void {
-  console.log('JSONSchemas: Initializing schema definitions');
+  console.log('Initializing schemas with Kuzu support...');
   
-  // Register all schema versions
-  jsonSchemaRegistry.registerSchema('blocknote', blockNoteSchemaV1);
-  jsonSchemaRegistry.registerSchema('entity', entitySchemaV1);
-  jsonSchemaRegistry.registerSchema('note', noteSchemaV1);
-  jsonSchemaRegistry.registerSchema('cytoscape', cytoscapeSchemaV1);
-  jsonSchemaRegistry.registerSchema('livestore', liveStoreSchemaV1);
+  // Register all schema collections
+  const allSchemas = [
+    ...blockNoteSchemas,
+    ...cytoscapeSchemas,
+    ...entitySchemas,
+    ...noteSchemas,
+    ...liveStoreSchemas,
+    ...kuzuSchemas
+  ];
   
-  console.log('JSONSchemas: All schemas registered');
+  for (const schema of allSchemas) {
+    jsonSchemaRegistry.registerSchema(schema.id, schema);
+  }
+  
+  console.log(`Schemas initialized: ${allSchemas.length} schemas registered including Kuzu support`);
 }
 
-export { jsonSchemaRegistry, JSONSchemaRegistry } from './JSONSchemaRegistry';
-export type { JSONSchemaDefinition } from './JSONSchemaRegistry';
-
-// Re-export individual schemas for direct access
-export { blockNoteSchemaV1, entitySchemaV1, noteSchemaV1, cytoscapeSchemaV1 };
-
-// Re-export new schemas
-export { liveStoreSchemaV1 };
+// Re-export everything
+export * from './JSONSchemaRegistry';
+export * from './BlockNoteSchema';
+export * from './CytoscapeSchema';
+export * from './EntitySchema';
+export * from './NoteSchema';
+export * from './LiveStoreSchema';
+export * from './KuzuSchema';

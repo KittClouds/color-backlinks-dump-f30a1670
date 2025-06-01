@@ -1,7 +1,8 @@
 
 import kuzuWasm from "kuzu-wasm";
+import { KuzuSchemaManager } from './KuzuSchemaManager';
 
-/** Bootstraps – returns { kuzu, db, conn } ready for use */
+/** Bootstraps – returns { kuzu, db, conn, schemaManager } ready for use */
 export async function initKuzu() {
   try {
     // 1 · Load WASM & point to worker
@@ -24,16 +25,35 @@ export async function initKuzu() {
     const db   = new kuzu.Database("/kuzu/main.kuzu");
     const conn = new kuzu.Connection(db);
 
-    // 🔧  Place any one-time schema here – runs harmlessly if tables exist
-    // await conn.execute(`CREATE NODE TABLE IF NOT EXISTS User(name STRING, PRIMARY KEY(name))`);
+    // 5 · Initialize schema with the complete DDL scaffold
+    console.log('initKuzu: Initializing schema...');
+    const schemaManager = new KuzuSchemaManager(conn);
+    await schemaManager.initializeSchema();
+    
+    // Validate schema was created properly
+    const validation = await schemaManager.validateSchema();
+    if (!validation.isValid) {
+      console.warn('initKuzu: Schema validation warnings:', validation.errors);
+    } else {
+      console.log('initKuzu: Schema validation passed');
+    }
 
-    // 5 · Flush pending writes whenever the tab is closed / refreshed
+    // Optional: Enable vector extension if available
+    try {
+      await schemaManager.enableVectorExtension();
+    } catch (error) {
+      console.log('initKuzu: Vector extension not available, continuing without it');
+    }
+
+    // 6 · Flush pending writes whenever the tab is closed / refreshed
     const flush = () => kuzu.FS.syncfs(false, err => {
       if (err) console.error("Kùzu sync-error:", err);
     });
     window.addEventListener("beforeunload", flush);
 
-    return { kuzu, db, conn };
+    console.log('initKuzu: Complete graph database with schema ready');
+    
+    return { kuzu, db, conn, schemaManager };
   } catch (error) {
     console.error("Failed to initialize Kùzu:", error);
     throw error;

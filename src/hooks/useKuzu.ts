@@ -1,11 +1,13 @@
 
 import { useState, useEffect } from 'react';
 import { initKuzu } from '@/lib/kuzu/initKuzu';
+import { KuzuSchemaManager } from '@/lib/kuzu/KuzuSchemaManager';
 
 interface KuzuInstance {
   kuzu: any;
   db: any;
   conn: any;
+  schemaManager: KuzuSchemaManager;
 }
 
 export function useKuzu() {
@@ -25,7 +27,7 @@ export function useKuzu() {
         
         if (mounted) {
           setKuzuInstance(instance);
-          console.log('Kuzu initialized successfully');
+          console.log('Kuzu initialized successfully with schema');
         }
       } catch (err) {
         if (mounted) {
@@ -50,6 +52,7 @@ export function useKuzu() {
     kuzu: kuzuInstance?.kuzu,
     db: kuzuInstance?.db,
     conn: kuzuInstance?.conn,
+    schemaManager: kuzuInstance?.schemaManager,
     isLoading,
     error,
     isReady: !!kuzuInstance && !isLoading && !error

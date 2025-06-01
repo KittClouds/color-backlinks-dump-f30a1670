@@ -1,5 +1,4 @@
 
-import { EnhancedNoteSerializer } from '@/services/EnhancedNoteSerializer';
 import { Note } from '@/lib/store';
 import { jsonManager } from '@/json-manager';
 
@@ -12,16 +11,17 @@ export const enhancedNoteStorage = {
    */
   saveNote(note: Note): boolean {
     try {
-      // Validate note before saving
-      const validation = EnhancedNoteSerializer.validateJSON(note as any);
-      if (!validation) {
-        console.warn('enhancedNoteStorage: Note validation failed, attempting to save anyway');
+      // Use jsonManager directly instead of EnhancedNoteSerializer
+      const result = jsonManager.serialize('note', note as any);
+      if (result.success && result.data) {
+        localStorage.setItem(`note-${note.id}`, JSON.stringify(result.data));
+        console.log(`enhancedNoteStorage: Successfully saved note ${note.id}`);
+        return true;
+      } else {
+        console.warn('enhancedNoteStorage: Note serialization failed, attempting to save anyway');
+        localStorage.setItem(`note-${note.id}`, JSON.stringify(note));
+        return true;
       }
-      
-      const json = EnhancedNoteSerializer.toJSON(note);
-      localStorage.setItem(`note-${note.id}`, JSON.stringify(json));
-      console.log(`enhancedNoteStorage: Successfully saved note ${note.id}`);
-      return true;
     } catch (error) {
       console.error('enhancedNoteStorage: Failed to save note:', error);
       return false;
@@ -38,15 +38,15 @@ export const enhancedNoteStorage = {
       
       const json = JSON.parse(jsonString);
       
-      // Validate before deserializing
-      const validation = EnhancedNoteSerializer.validateJSON(json);
-      if (!validation) {
-        console.warn(`enhancedNoteStorage: Invalid JSON for note ${noteId}, attempting recovery`);
+      // Try to deserialize using jsonManager
+      const result = jsonManager.deserialize('note', json);
+      if (result.success && result.data) {
+        console.log(`enhancedNoteStorage: Successfully loaded note ${noteId}`);
+        return result.data as Note;
+      } else {
+        console.warn(`enhancedNoteStorage: Deserialization failed for note ${noteId}, returning raw data`);
+        return json as Note;
       }
-      
-      const note = EnhancedNoteSerializer.fromJSON(json);
-      console.log(`enhancedNoteStorage: Successfully loaded note ${noteId}`);
-      return note;
     } catch (error) {
       console.error('enhancedNoteStorage: Failed to load note:', error);
       return null;
@@ -94,7 +94,8 @@ export const enhancedNoteStorage = {
         const jsonString = localStorage.getItem(`note-${noteId}`);
         if (jsonString) {
           const json = JSON.parse(jsonString);
-          if (EnhancedNoteSerializer.validateJSON(json)) {
+          const result = jsonManager.validate('note', json);
+          if (result.success) {
             valid.push(noteId);
           } else {
             invalid.push(noteId);

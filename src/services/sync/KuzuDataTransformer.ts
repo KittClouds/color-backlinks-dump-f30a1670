@@ -1,4 +1,3 @@
-
 import { ElementDefinition } from 'cytoscape';
 import { 
   AllKuzuNodes, 
@@ -65,6 +64,19 @@ export class KuzuDataTransformer {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     } as KuzuNote;
+  }
+  
+  /**
+   * Transform Cytoscape edge to Kuzu relationship data
+   */
+  static cytoscapeToKuzuRel(element: ElementDefinition): AllKuzuRels | null {
+    if (element.group !== 'edges') return null;
+    
+    const data = element.data;
+    
+    // Basic relationship structure - most Kuzu relationships don't have additional properties
+    // The connection is implied by the edge structure itself
+    return {} as AllKuzuRels;
   }
   
   /**

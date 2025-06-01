@@ -1,4 +1,3 @@
-
 export { JSONManager, jsonManager } from './JSONManager';
 export { JSONRegistry } from './JSONRegistry';
 export * from './adapters';
@@ -56,7 +55,9 @@ export {
   blockNoteAdapter, 
   cytoscapeAdapter, 
   entityAdapter, 
-  noteAdapter
+  noteAdapter,
+  liveStoreAdapter,
+  backwardCompatibilityAdapter 
 } from './adapters';
 
 export {

@@ -2,11 +2,12 @@
 import { useState, useEffect } from 'react';
 import kuzuService from '@/lib/kuzu/KuzuService';
 import { KuzuSchemaManager } from '@/lib/kuzu/KuzuSchemaManager';
+import { Kuzu, KuzuDatabase, KuzuConnection } from '@/lib/kuzu/KuzuTypes';
 
 interface KuzuInstance {
-  kuzu: any;
-  db: any;
-  conn: any;
+  kuzu: Kuzu;
+  db: KuzuDatabase;
+  conn: KuzuConnection;
   schemaManager: KuzuSchemaManager;
 }
 
@@ -30,7 +31,7 @@ export function useKuzu() {
           // Get components for compatibility
           const db = await kuzuService.getDb();
           const schemaManager = await kuzuService.getSchemaManager();
-          const kuzu = (kuzuService as any).kuzu;
+          const kuzu = (kuzuService as any).kuzu as Kuzu;
           const conn = new kuzu.Connection(db);
           
           setKuzuInstance({
@@ -39,7 +40,7 @@ export function useKuzu() {
             conn,
             schemaManager
           });
-          console.log('Kuzu initialized successfully with schema via KuzuService');
+          console.log('Kuzu initialized successfully with typed service');
         }
       } catch (err) {
         if (mounted) {
@@ -57,6 +58,10 @@ export function useKuzu() {
 
     return () => {
       mounted = false;
+      // Clean up connection if it exists
+      if (kuzuInstance?.conn) {
+        kuzuInstance.conn.close().catch(console.error);
+      }
     };
   }, []);
 

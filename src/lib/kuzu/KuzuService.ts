@@ -1,20 +1,23 @@
+
 import kuzuWasm from "kuzu-wasm";
 import { KuzuSchemaManager } from './KuzuSchemaManager';
-import { KuzuQueryResult } from './types';
 import { atomicJSONManager } from '@/json-manager/AtomicJSONManager';
 import { jsonSafetyManager } from '@/json-manager/SafetyManager';
+import { Kuzu, KuzuDatabase, KuzuConnection, KuzuQueryResult } from './KuzuTypes';
 
 /**
- * Unified KuzuService - Adopts official Kuzu patterns while preserving all existing functionality
+ * Improved KuzuService with proper typing and optimized schema management
  * Singleton service that manages database initialization, connections, and operations
  */
 class KuzuService {
-  private kuzu: any = null;
-  private db: any = null;
-  private schemaManager: KuzuSchemaManager | null = null;
+  private kuzu!: Kuzu;
+  private db!: KuzuDatabase;
+  private schemaManager!: KuzuSchemaManager;
   private isInitialized = false;
   private initializationPromise: Promise<void> | null = null;
-  private _schema: any = null;
+
+  // Cached "fingerprint" of the schema (e.g. array of table names)
+  private schemaFingerprint: string[] = [];
 
   constructor() {
     // Set worker path similar to official example
@@ -25,46 +28,48 @@ class KuzuService {
   }
 
   /**
-   * Initialize Kuzu with lazy loading pattern from official example
+   * Initialize Kuzu with lazy loading pattern
    */
   async init(): Promise<void> {
     if (this.initializationPromise) {
-      await this.initializationPromise;
-      return;
+      return this.initializationPromise;
     }
-
-    if (this.isInitialized) {
-      return;
-    }
+    if (this.isInitialized) return;
 
     this.initializationPromise = this._performInit();
-    await this.initializationPromise;
+    try {
+      await this.initializationPromise;
+    } catch (e) {
+      // If something goes wrong, reset so next init can try again
+      this.initializationPromise = null;
+      throw e;
+    }
     this.initializationPromise = null;
   }
 
   private async _performInit(): Promise<void> {
     try {
-      console.time("Kùzu init");
+      console.time("Kuzu init");
       
-      // 1 · Load WASM & point to worker (from your existing pattern)
+      // 1 · Load WASM & point to worker
       kuzuWasm.setWorkerPath("/js/kuzu_wasm_worker.js");
-      this.kuzu = await kuzuWasm();
+      this.kuzu = await kuzuWasm() as Kuzu;
 
-      // 2 · Mount an IDB-backed folder so /kuzu persists (from your existing pattern)
+      // 2 · Mount an IDB-backed folder so /kuzu persists
       if (!this.kuzu.FS.analyzePath("/kuzu").exists) {
         this.kuzu.FS.mkdir("/kuzu");
       }
       this.kuzu.FS.mount(this.kuzu.IDBFS, {}, "/kuzu");
 
-      // 3 · Pull any existing DB file from IndexedDB (from your existing pattern)
+      // 3 · Pull any existing DB file from IndexedDB
       await new Promise<void>((res, rej) =>
         this.kuzu.FS.syncfs(true, err => (err ? rej(err) : res()))
       );
 
-      // 4 · Create database - using official example's approach with persistence path
+      // 4 · Create database
       this.db = new this.kuzu.Database("/kuzu/main.kuzu");
 
-      // 5 · Test connection and get version (from official example)
+      // 5 · Test connection and get version
       const testConn = new this.kuzu.Connection(this.db);
       try {
         const versionResult = await testConn.query(`CALL db_version() RETURN *;`);
@@ -75,34 +80,10 @@ class KuzuService {
         await testConn.close();
       }
 
-      // 6 · Initialize schema manager (from your existing pattern)
-      const conn = new this.kuzu.Connection(this.db);
-      try {
-        this.schemaManager = new KuzuSchemaManager(conn);
-        await this.schemaManager.initializeSchema();
-        
-        // Validate schema was created properly
-        const validation = await this.schemaManager.validateSchema();
-        if (!validation.isValid) {
-          console.warn('KuzuService: Schema validation warnings:', validation.errors);
-        } else {
-          console.log('KuzuService: Schema validation passed');
-        }
+      // 6 · Create / validate schema ONCE
+      await this._bootstrapSchema();
 
-        // Optional: Enable vector extension if available
-        try {
-          await this.schemaManager.enableVectorExtension();
-        } catch (error) {
-          console.log('KuzuService: Vector extension not available, continuing without it');
-        }
-      } finally {
-        await conn.close();
-      }
-
-      // 7 · Get initial schema (from official example pattern)
-      this._schema = await this.getSchema();
-
-      // 8 · Set up persistence flush (from your existing pattern)
+      // 7 · Set up persistence flush
       const flush = () => this.kuzu.FS.syncfs(false, err => {
         if (err) console.error("Kùzu sync-error:", err);
       });
@@ -110,8 +91,10 @@ class KuzuService {
         window.addEventListener("beforeunload", flush);
       }
 
+      // 8 · Cache initial schema fingerprint
+      this.schemaFingerprint = await this._getSchemaFingerprint();
       this.isInitialized = true;
-      console.timeEnd("Kùzu init");
+      console.timeEnd("Kuzu init");
       console.log('KuzuService: Complete graph database with schema ready');
       
     } catch (error) {
@@ -121,10 +104,51 @@ class KuzuService {
     }
   }
 
-  /**
-   * Get database instance with lazy initialization (from official example)
+  private async _bootstrapSchema(): Promise<void> {
+    const conn = new this.kuzu.Connection(this.db);
+    try {
+      this.schemaManager = new KuzuSchemaManager(conn);
+      await this.schemaManager.initializeSchema();
+      
+      const validation = await this.schemaManager.validateSchema();
+      if (!validation.isValid) {
+        throw new Error(
+          `Schema validation failed: ${JSON.stringify(validation.errors)}`
+        );
+      }
+      
+      try {
+        await this.schemaManager.enableVectorExtension();
+      } catch {
+        console.warn("Vector extension unavailable");
+      }
+    } finally {
+      await conn.close();
+    }
+  }
+
+  /** 
+   * Returns an array of table names (sorted). 
+   * We'll compare this to the last fingerprint.
    */
-  async getDb(): Promise<any> {
+  private async _getSchemaFingerprint(): Promise<string[]> {
+    const conn = new this.kuzu.Connection(this.db);
+    try {
+      const result = await conn.query("CALL show_tables() RETURN *;");
+      const tables = await result.getAllObjects(); 
+      await result.close();
+      return tables
+        .map((tbl: any) => tbl.name as string)
+        .sort((a, b) => a.localeCompare(b));
+    } finally {
+      await conn.close();
+    }
+  }
+
+  /**
+   * Get database instance with lazy initialization
+   */
+  async getDb(): Promise<KuzuDatabase> {
     if (!this.db) {
       await this.init();
     }
@@ -138,15 +162,112 @@ class KuzuService {
     if (!this.schemaManager) {
       await this.init();
     }
-    return this.schemaManager!;
+    return this.schemaManager;
   }
 
   /**
-   * Get schema using official example's pattern with your enhancements
+   * Enhanced query method with proper typing and optimized schema detection
+   */
+  async query(
+    statement: string,
+    params: Record<string, any> = {}
+  ): Promise<Record<string, any>[]> {
+    if (!statement || typeof statement !== "string") {
+      throw new Error("KuzuService.query: statement must be a non-empty string");
+    }
+    if (params && typeof params !== "object") {
+      throw new Error("Params must be an object");
+    }
+
+    // If uninitialized, bootstrap everything
+    await this.init();
+
+    // Simple heuristic: only re‑compute schema fingerprint on DDL
+    const isDDL = /^\s*(CREATE|ALTER|DROP)\b/i.test(statement);
+    let newFingerprint: string[] | null = null;
+
+    // Serialize JSON input for safety
+    const opId = `kuzu-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    jsonSafetyManager.createBackup("kuzu_query", "execute", {
+      statement,
+      params,
+      opId,
+    });
+    
+    const atomicResult = await atomicJSONManager.atomicSerialize("kuzu_query_execution", {
+      query: statement,
+      params,
+      opId,
+    });
+
+    if (!atomicResult.success) {
+      throw new Error(`Query preparation failed: ${atomicResult.error}`);
+    }
+
+    // Execute query
+    const conn = new this.kuzu.Connection(this.db);
+    let result: KuzuQueryResult;
+    
+    try {
+      if (Object.keys(params).length === 0) {
+        result = await conn.query(statement);
+      } else {
+        const ps = await conn.prepare(statement);
+        result = await conn.execute(ps, params);
+        await ps.close();
+      }
+
+      // Only re‑compute fingerprint if DDL
+      if (isDDL) {
+        newFingerprint = await this._getSchemaFingerprint();
+      }
+
+      // Process all result sets
+      const allRows: Record<string, any>[] = [];
+      let cursor: KuzuQueryResult | null = result;
+      while (cursor) {
+        const rows = await cursor.getAllObjects();
+        allRows.push(...rows);
+        if (cursor.hasNextQueryResult()) {
+          cursor = await cursor.getNextQueryResult();
+        } else {
+          break;
+        }
+      }
+      await result.close();
+
+      // If fingerprint changed, update class‑level cache
+      if (newFingerprint) {
+        const changed =
+          newFingerprint.length !== this.schemaFingerprint.length ||
+          newFingerprint.some((t, i) => t !== this.schemaFingerprint[i]);
+        if (changed) {
+          this.schemaFingerprint = newFingerprint;
+          console.info("KuzuService: Detected schema change, new tables:", newFingerprint);
+        }
+      }
+
+      console.info(`KuzuService: ${allRows.length} rows returned`);
+      return allRows;
+      
+    } catch (err) {
+      console.error(`KuzuService: query failed: ${err}`);
+      const corruption = jsonSafetyManager.detectCorruption("kuzu_query", statement, opId);
+      if (corruption) {
+        console.warn("Possible data corruption detected:", corruption);
+      }
+      throw err;
+    } finally {
+      await conn.close();
+    }
+  }
+
+  /**
+   * Get schema using optimized fingerprint approach
    */
   async getSchema(): Promise<any> {
-    const db = await this.getDb();
-    const conn = new this.kuzu.Connection(db);
+    await this.init();
+    const conn = new this.kuzu.Connection(this.db);
     
     try {
       let result = await conn.query("CALL show_tables() RETURN *;");
@@ -204,7 +325,7 @@ class KuzuService {
   /**
    * Process single result using official example's pattern
    */
-  async processSingleResult(result: any): Promise<any> {
+  async processSingleResult(result: KuzuQueryResult): Promise<any> {
     const rows = await result.getAllObjects();
     const columnTypes = await result.getColumnTypes();
     const columnNames = await result.getColumnNames();
@@ -218,124 +339,21 @@ class KuzuService {
   }
 
   /**
-   * Enhanced query method combining official example's patterns with your safety features
-   */
-  async query(
-    statement: string, 
-    params: Record<string, any> = {}
-  ): Promise<Array<Record<string, any>>> {
-    // Input validation from official example
-    if (!statement || typeof statement !== "string") {
-      throw new Error("The statement must be a string with length > 0");
-    }
-    if (params && typeof params !== "object") {
-      throw new Error("Params must be an object");
-    }
-
-    await this.init(); // Ensure initialization
-    const db = await this.getDb();
-    const conn = new this.kuzu.Connection(db);
-    
-    const operationId = `kuzu-query-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-    
-    try {
-      // Create safety backup (your existing pattern)
-      const backupId = jsonSafetyManager.createBackup('kuzu_query', 'execute', {
-        statement,
-        params,
-        timestamp: Date.now()
-      });
-
-      console.log(`KuzuService: Executing query with backup ${backupId}`);
-      
-      // Execute atomic query operation (your existing pattern)
-      const atomicResult = await atomicJSONManager.atomicSerialize('kuzu_query_execution', {
-        query: statement,
-        params,
-        operationId
-      });
-
-      if (!atomicResult.success) {
-        throw new Error(`Query preparation failed: ${atomicResult.error}`);
-      }
-
-      // Execute query using official example's pattern
-      let result;
-      if (!params || Object.keys(params).length === 0) {
-        result = await conn.query(statement);
-      } else {
-        const preparedStatement = await conn.prepare(statement);
-        result = await conn.execute(preparedStatement, params);
-        await preparedStatement.close();
-      }
-
-      // Check for schema changes (from official example)
-      let isSchemaChanged = false;
-      const currentSchema = await this.getSchema();
-      isSchemaChanged = JSON.stringify(this._schema) !== JSON.stringify(currentSchema);
-      
-      if (isSchemaChanged) {
-        this._schema = currentSchema;
-      }
-
-      // Process results using official example's pattern
-      let responseBody;
-      if (!result.hasNextQueryResult()) {
-        responseBody = await this.processSingleResult(result);
-        await result.close();
-        responseBody.isSchemaChanged = isSchemaChanged;
-        responseBody.isMultiStatement = false;
-      } else {
-        responseBody = {
-          isSchemaChanged,
-          isMultiStatement: true,
-          results: [],
-        };
-        let currentResult = result;
-        while (currentResult) {
-          const singleResultBody = await this.processSingleResult(currentResult);
-          responseBody.results.push(singleResultBody);
-          if (!currentResult.hasNextQueryResult()) {
-            break;
-          }
-          currentResult = await currentResult.getNextQueryResult();
-        }
-        await result.close();
-      }
-
-      // Return rows in your expected format
-      const rows = responseBody.isMultiStatement ? 
-        responseBody.results.flatMap((r: any) => r.rows) : 
-        responseBody.rows;
-
-      console.log(`KuzuService: Query executed successfully, ${rows.length} rows returned`);
-      return rows;
-
-    } catch (error) {
-      console.error(`KuzuService: Query execution failed for operation ${operationId}:`, error);
-      
-      // Attempt corruption detection and recovery (your existing pattern)
-      const corruption = jsonSafetyManager.detectCorruption('kuzu_query', statement, operationId);
-      if (corruption) {
-        console.warn(`KuzuService: Query corruption detected: ${corruption.details}`);
-      }
-      
-      throw error;
-    } finally {
-      await conn.close();
-    }
-  }
-
-  /**
    * Close database connection
    */
   async close(): Promise<void> {
-    if (this.db) {
-      await this.db.close();
-      this.db = null;
-      this.isInitialized = false;
-      this.schemaManager = null;
+    if (!this.db) return;
+    
+    // Remove FS listener if needed
+    if (typeof window !== 'undefined') {
+      window.removeEventListener("beforeunload", () => this.kuzu.FS.syncfs(false, () => {}));
     }
+
+    await this.db.close();
+    this.db = undefined!;
+    this.isInitialized = false;
+    this.schemaManager = undefined!;
+    this.schemaFingerprint = [];
   }
 
   /**
@@ -343,6 +361,29 @@ class KuzuService {
    */
   getFS(): any {
     return this.kuzu?.FS;
+  }
+
+  /**
+   * Get current schema fingerprint
+   */
+  getSchemaFingerprint(): string[] {
+    return [...this.schemaFingerprint];
+  }
+
+  /**
+   * Check if schema has changed since last check
+   */
+  async hasSchemaChanged(): Promise<boolean> {
+    const currentFingerprint = await this._getSchemaFingerprint();
+    const changed = 
+      currentFingerprint.length !== this.schemaFingerprint.length ||
+      currentFingerprint.some((t, i) => t !== this.schemaFingerprint[i]);
+    
+    if (changed) {
+      this.schemaFingerprint = currentFingerprint;
+    }
+    
+    return changed;
   }
 
   /**
@@ -354,6 +395,7 @@ class KuzuService {
     indexCount: number;
     isInitialized: boolean;
     version?: string;
+    schemaFingerprint: string[];
   }> {
     try {
       await this.init();
@@ -375,7 +417,8 @@ class KuzuService {
         tableCount: (schema.nodeTables?.length || 0) + (schema.relTables?.length || 0),
         indexCount: 4, // Known indices from schema
         isInitialized: this.isInitialized,
-        version
+        version,
+        schemaFingerprint: this.getSchemaFingerprint()
       };
     } catch (error) {
       console.error('KuzuService: Failed to get diagnostics:', error);
@@ -383,13 +426,14 @@ class KuzuService {
         schema: {},
         tableCount: 0,
         indexCount: 0,
-        isInitialized: this.isInitialized
+        isInitialized: this.isInitialized,
+        schemaFingerprint: []
       };
     }
   }
 }
 
-// Singleton instance (following official example pattern)
+// Singleton instance
 const kuzuService = new KuzuService();
 export default kuzuService;
 

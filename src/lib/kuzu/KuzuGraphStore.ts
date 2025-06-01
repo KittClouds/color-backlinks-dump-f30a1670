@@ -4,29 +4,28 @@ import { KuzuSchemaManager } from './KuzuSchemaManager';
 import { KuzuQueryResult } from './types';
 import { atomicJSONManager } from '@/json-manager/AtomicJSONManager';
 import { jsonSafetyManager } from '@/json-manager/SafetyManager';
+import kuzuService from './KuzuService';
 
 /**
- * KuzuGraphStore - Implementation of GraphStore for Kuzu database
- * Provides secure, atomic operations with your JSON manager integration
+ * KuzuGraphStore - Implementation of GraphStore using unified KuzuService
+ * Now uses official Kuzu patterns via KuzuService while maintaining all functionality
  */
 export class KuzuGraphStore extends GraphStore {
-  private conn: any;
-  private schemaManager: KuzuSchemaManager;
-  private isInitialized = false;
+  private schemaManager: KuzuSchemaManager | null = null;
 
-  constructor(connection: any, schemaManager: KuzuSchemaManager) {
+  constructor() {
     super();
-    this.conn = connection;
-    this.schemaManager = schemaManager;
   }
 
   /**
-   * Initialize the store and ensure schema is ready
+   * Initialize the store using KuzuService
    */
   async initialize(): Promise<void> {
-    if (this.isInitialized) return;
-
-    console.log('KuzuGraphStore: Initializing...');
+    console.log('KuzuGraphStore: Initializing via KuzuService...');
+    
+    // Initialize via unified service
+    await kuzuService.init();
+    this.schemaManager = await kuzuService.getSchemaManager();
     
     // Ensure schema is properly set up
     const validation = await this.schemaManager.validateSchema();
@@ -36,26 +35,25 @@ export class KuzuGraphStore extends GraphStore {
       await this.schemaManager.initializeSchema();
     }
 
-    this.isInitialized = true;
-    console.log('KuzuGraphStore: Initialization complete');
+    console.log('KuzuGraphStore: Initialization complete via KuzuService');
   }
 
   /**
    * Get textual schema representation
    */
   get schema(): string {
-    return this.schemaManager.schema;
+    return this.schemaManager?.schema || '';
   }
 
   /**
    * Get structured schema representation
    */
   get structuredSchema(): Record<string, any> {
-    return this.schemaManager.structuredSchema;
+    return this.schemaManager?.structuredSchema || {};
   }
 
   /**
-   * Execute KuzuQL query with atomic safety
+   * Execute KuzuQL query using unified service with atomic safety
    */
   async query(
     query: string, 
@@ -63,67 +61,26 @@ export class KuzuGraphStore extends GraphStore {
   ): Promise<Array<Record<string, any>>> {
     await this.ensureInitialized();
     
-    const operationId = `kuzu-query-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-    
-    try {
-      // Create safety backup of query and parameters
-      const backupId = jsonSafetyManager.createBackup('kuzu_query', 'execute', {
-        query,
-        params,
-        timestamp: Date.now()
-      });
-
-      console.log(`KuzuGraphStore: Executing query with backup ${backupId}`);
-      
-      // Execute atomic query operation
-      const result = await atomicJSONManager.atomicSerialize('kuzu_query_execution', {
-        query,
-        params,
-        operationId
-      });
-
-      if (!result.success) {
-        throw new Error(`Query preparation failed: ${result.error}`);
-      }
-
-      // Execute the actual KuzuQL query
-      const queryResult = await this.conn.execute(query, params);
-      
-      // Validate and process results
-      const processedResult = this.processQueryResult(queryResult);
-      
-      console.log(`KuzuGraphStore: Query executed successfully, ${processedResult.length} rows returned`);
-      return processedResult;
-
-    } catch (error) {
-      console.error(`KuzuGraphStore: Query execution failed for operation ${operationId}:`, error);
-      
-      // Attempt corruption detection and recovery
-      const corruption = jsonSafetyManager.detectCorruption('kuzu_query', query, operationId);
-      if (corruption) {
-        console.warn(`KuzuGraphStore: Query corruption detected: ${corruption.details}`);
-      }
-      
-      throw error;
-    }
+    // Delegate to unified service which handles all the safety and official patterns
+    return await kuzuService.query(query, params);
   }
 
   /**
-   * Refresh schema metadata
+   * Refresh schema metadata using unified service
    */
   async refreshSchema(): Promise<void> {
     await this.ensureInitialized();
     
     try {
-      console.log('KuzuGraphStore: Refreshing schema...');
+      console.log('KuzuGraphStore: Refreshing schema via KuzuService...');
       
       // Re-validate current schema
-      const validation = await this.schemaManager.validateSchema();
+      const validation = await this.schemaManager!.validateSchema();
       if (!validation.isValid) {
         console.warn('KuzuGraphStore: Schema issues detected during refresh:', validation.errors);
         
         // Attempt schema repair or recreation
-        await this.schemaManager.initializeSchema();
+        await this.schemaManager!.initializeSchema();
       }
       
       console.log('KuzuGraphStore: Schema refresh completed');
@@ -134,47 +91,7 @@ export class KuzuGraphStore extends GraphStore {
   }
 
   /**
-   * Ingest GraphDocument objects into Kuzu with 1-to-1 mapping
-   */
-  async addGraphDocuments(
-    graphDocuments: GraphDocument[], 
-    includeSource = false
-  ): Promise<void> {
-    await this.ensureInitialized();
-    
-    console.log(`KuzuGraphStore: Ingesting ${graphDocuments.length} graph documents`);
-    
-    for (const graphDoc of graphDocuments) {
-      try {
-        // Create backup before ingestion
-        const backupId = jsonSafetyManager.createBackup('graph_document', 'ingest', graphDoc);
-        
-        // Process vertices first (GraphDocument uses vertices, not nodes)
-        for (const vertex of graphDoc.vertices) {
-          await this.ingestVertex(vertex, backupId);
-        }
-        
-        // Then process edges (GraphDocument uses edges, not relationships)
-        for (const edge of graphDoc.edges) {
-          await this.ingestEdge(edge, backupId);
-        }
-        
-        // Optionally store source document
-        if (includeSource && graphDoc.source) {
-          await this.ingestSourceDocument(graphDoc.source, backupId);
-        }
-        
-        console.log(`KuzuGraphStore: Successfully ingested document from backup ${backupId}`);
-        
-      } catch (error) {
-        console.error('KuzuGraphStore: Failed to ingest graph document:', error);
-        throw error;
-      }
-    }
-  }
-
-  /**
-   * Get comprehensive diagnostics
+   * Get comprehensive diagnostics using unified service
    */
   async getDiagnostics(): Promise<{
     schema: any;
@@ -184,13 +101,13 @@ export class KuzuGraphStore extends GraphStore {
     lastQuery?: string;
   }> {
     try {
-      const schemaInfo = await this.schemaManager.getSchemaInfo();
+      const serviceDiagnostics = await kuzuService.getDiagnostics();
       
       return {
-        schema: this.structuredSchema,
-        tableCount: schemaInfo.tables.length,
-        indexCount: 4, // Known indices from schema
-        isInitialized: this.isInitialized,
+        schema: serviceDiagnostics.schema,
+        tableCount: serviceDiagnostics.tableCount,
+        indexCount: serviceDiagnostics.indexCount,
+        isInitialized: serviceDiagnostics.isInitialized,
         lastQuery: 'CALL show_tables() RETURN name, type;'
       };
     } catch (error) {
@@ -199,32 +116,15 @@ export class KuzuGraphStore extends GraphStore {
         schema: {},
         tableCount: 0,
         indexCount: 0,
-        isInitialized: this.isInitialized
+        isInitialized: false
       };
     }
   }
 
   private async ensureInitialized(): Promise<void> {
-    if (!this.isInitialized) {
+    if (!this.schemaManager) {
       await this.initialize();
     }
-  }
-
-  private processQueryResult(result: any): Array<Record<string, any>> {
-    // Handle different result formats from Kuzu
-    if (Array.isArray(result)) {
-      return result;
-    }
-    
-    if (result && typeof result === 'object' && result.rows) {
-      return result.rows;
-    }
-    
-    if (result && typeof result === 'object') {
-      return [result];
-    }
-    
-    return [];
   }
 
   private async ingestVertex(vertex: any, backupId: string): Promise<void> {
@@ -297,5 +197,45 @@ export class KuzuGraphStore extends GraphStore {
       MERGE (source)-[r:${relType}]->(target)
       SET r.createdAt = datetime()
     `;
+  }
+
+  /**
+   * Ingest GraphDocument objects into Kuzu with 1-to-1 mapping
+   */
+  async addGraphDocuments(
+    graphDocuments: GraphDocument[], 
+    includeSource = false
+  ): Promise<void> {
+    await this.ensureInitialized();
+    
+    console.log(`KuzuGraphStore: Ingesting ${graphDocuments.length} graph documents`);
+    
+    for (const graphDoc of graphDocuments) {
+      try {
+        // Create backup before ingestion
+        const backupId = jsonSafetyManager.createBackup('graph_document', 'ingest', graphDoc);
+        
+        // Process vertices first (GraphDocument uses vertices, not nodes)
+        for (const vertex of graphDoc.vertices) {
+          await this.ingestVertex(vertex, backupId);
+        }
+        
+        // Then process edges (GraphDocument uses edges, not relationships)
+        for (const edge of graphDoc.edges) {
+          await this.ingestEdge(edge, backupId);
+        }
+        
+        // Optionally store source document
+        if (includeSource && graphDoc.source) {
+          await this.ingestSourceDocument(graphDoc.source, backupId);
+        }
+        
+        console.log(`KuzuGraphStore: Successfully ingested document from backup ${backupId}`);
+        
+      } catch (error) {
+        console.error('KuzuGraphStore: Failed to ingest graph document:', error);
+        throw error;
+      }
+    }
   }
 }

@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { initKuzu } from '@/lib/kuzu/initKuzu';
+import kuzuService from '@/lib/kuzu/KuzuService';
 import { KuzuSchemaManager } from '@/lib/kuzu/KuzuSchemaManager';
 
 interface KuzuInstance {
@@ -23,11 +23,23 @@ export function useKuzu() {
         setIsLoading(true);
         setError(null);
         
-        const instance = await initKuzu();
+        // Initialize via unified service
+        await kuzuService.init();
         
         if (mounted) {
-          setKuzuInstance(instance);
-          console.log('Kuzu initialized successfully with schema');
+          // Get components for compatibility
+          const db = await kuzuService.getDb();
+          const schemaManager = await kuzuService.getSchemaManager();
+          const kuzu = (kuzuService as any).kuzu;
+          const conn = new kuzu.Connection(db);
+          
+          setKuzuInstance({
+            kuzu,
+            db,
+            conn,
+            schemaManager
+          });
+          console.log('Kuzu initialized successfully with schema via KuzuService');
         }
       } catch (err) {
         if (mounted) {

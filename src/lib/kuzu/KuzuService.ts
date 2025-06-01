@@ -1,4 +1,3 @@
-
 import kuzuWasm from "kuzu-wasm";
 import { KuzuSchemaManager } from './KuzuSchemaManager';
 import { KuzuQueryResult } from './types';
@@ -20,7 +19,8 @@ class KuzuService {
   constructor() {
     // Set worker path similar to official example
     if (typeof window !== 'undefined') {
-      window.kuzu = this; // For debugging, like official example
+      // Type assertion to avoid TypeScript error
+      (window as any).kuzu = this; // For debugging, like official example
     }
   }
 

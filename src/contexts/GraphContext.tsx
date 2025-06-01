@@ -206,9 +206,9 @@ export const GraphProvider: React.FC<{children: React.ReactNode}> = ({ children 
         try {
           console.log('GraphContext: Initializing Kuzu sync service...');
           
-          // Create KuzuGraphStore instance
+          // Create KuzuGraphStore instance - now uses no constructor arguments
           const { KuzuGraphStore } = await import('@/lib/kuzu/KuzuGraphStore');
-          const kuzuStore = new KuzuGraphStore(conn, schemaManager);
+          const kuzuStore = new KuzuGraphStore();
           await kuzuStore.initialize();
           
           // Initialize sync service

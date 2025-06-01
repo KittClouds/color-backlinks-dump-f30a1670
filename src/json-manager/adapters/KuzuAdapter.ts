@@ -97,8 +97,9 @@ export const kuzuAdapter: SerializationAdapter<AllKuzuNodes | AllKuzuRels | Kuzu
       return cleanData;
     }
     
-    // Fallback
-    return data;
+    // Fallback - return the clean data without metadata
+    const { metadata: _, dataType: __, ...cleanData } = data;
+    return cleanData;
   },
   
   validate: (json: Record<string, any>) => {
@@ -182,7 +183,7 @@ export const kuzuSyncAdapter: SerializationAdapter<KuzuSyncElement | KuzuSyncOpe
     }
   },
   
-  deserialize: (json: Record<string, any>) => {
+  deserialize: (json: Record<string, any>): KuzuSyncElement | KuzuSyncOperation => {
     const { dataType, metadata, ...data } = json;
     
     if (dataType === 'kuzu_sync_operation') {
@@ -204,7 +205,8 @@ export const kuzuSyncAdapter: SerializationAdapter<KuzuSyncElement | KuzuSyncOpe
       } as KuzuSyncElement;
     }
     
-    return data;
+    // This should never happen if validate() passes, but we need a fallback
+    throw new Error(`Invalid sync data type: ${dataType}`);
   },
   
   validate: (json: Record<string, any>) => {

@@ -1,10 +1,10 @@
 
 import { jsonSchemaRegistry } from './JSONSchemaRegistry';
-import { blockNoteSchemas } from './BlockNoteSchema';
-import { cytoscapeSchemas } from './CytoscapeSchema';
-import { entitySchemas } from './EntitySchema';
-import { noteSchemas } from './NoteSchema';
-import { liveStoreSchemas } from './LiveStoreSchema';
+import { blockNoteSchemaV1 } from './BlockNoteSchema';
+import { cytoscapeSchemaV1 } from './CytoscapeSchema';
+import { entitySchemaV1 } from './EntitySchema';
+import { noteSchemaV1 } from './NoteSchema';
+import { liveStoreSchemaV1 } from './LiveStoreSchema';
 import { kuzuSchemas } from './KuzuSchema';
 
 /**
@@ -13,13 +13,13 @@ import { kuzuSchemas } from './KuzuSchema';
 export function initializeSchemas(): void {
   console.log('Initializing schemas with Kuzu support...');
   
-  // Register all schema collections
+  // Register individual schemas and Kuzu schema collection
   const allSchemas = [
-    ...blockNoteSchemas,
-    ...cytoscapeSchemas,
-    ...entitySchemas,
-    ...noteSchemas,
-    ...liveStoreSchemas,
+    blockNoteSchemaV1,
+    cytoscapeSchemaV1,
+    entitySchemaV1,
+    noteSchemaV1,
+    liveStoreSchemaV1,
     ...kuzuSchemas
   ];
   

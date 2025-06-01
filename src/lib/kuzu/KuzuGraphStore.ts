@@ -1,4 +1,3 @@
-
 import { GraphStore } from '../langchain-lite/graph_store';
 import { GraphDocument } from '../langchain-lite/graph';
 import { KuzuSchemaManager } from './KuzuSchemaManager';
@@ -150,14 +149,14 @@ export class KuzuGraphStore extends GraphStore {
         // Create backup before ingestion
         const backupId = jsonSafetyManager.createBackup('graph_document', 'ingest', graphDoc);
         
-        // Process nodes first
-        for (const node of graphDoc.nodes) {
-          await this.ingestNode(node, backupId);
+        // Process vertices first (GraphDocument uses vertices, not nodes)
+        for (const vertex of graphDoc.vertices) {
+          await this.ingestVertex(vertex, backupId);
         }
         
-        // Then process relationships
-        for (const relationship of graphDoc.relationships) {
-          await this.ingestRelationship(relationship, backupId);
+        // Then process edges (GraphDocument uses edges, not relationships)
+        for (const edge of graphDoc.edges) {
+          await this.ingestEdge(edge, backupId);
         }
         
         // Optionally store source document
@@ -228,21 +227,21 @@ export class KuzuGraphStore extends GraphStore {
     return [];
   }
 
-  private async ingestNode(node: any, backupId: string): Promise<void> {
-    // Determine node type and create appropriate KuzuQL
-    const nodeType = this.inferNodeType(node);
-    const query = this.buildNodeInsertQuery(nodeType, node);
+  private async ingestVertex(vertex: any, backupId: string): Promise<void> {
+    // Determine vertex type and create appropriate KuzuQL
+    const vertexType = this.inferVertexType(vertex);
+    const query = this.buildVertexInsertQuery(vertexType, vertex);
     
-    await this.query(query, node.properties || {});
+    await this.query(query, vertex.properties || {});
   }
 
-  private async ingestRelationship(relationship: any, backupId: string): Promise<void> {
-    // Build relationship insert query
-    const query = this.buildRelationshipInsertQuery(relationship);
+  private async ingestEdge(edge: any, backupId: string): Promise<void> {
+    // Build edge insert query
+    const query = this.buildEdgeInsertQuery(edge);
     const params = {
-      sourceId: relationship.source.id,
-      targetId: relationship.target.id,
-      ...relationship.properties
+      sourceId: edge.source,
+      targetId: edge.target,
+      ...edge.properties
     };
     
     await this.query(query, params);
@@ -264,33 +263,33 @@ export class KuzuGraphStore extends GraphStore {
     });
   }
 
-  private inferNodeType(node: any): string {
-    // Infer Kuzu node type from node properties
-    if (node.type === 'Note' || node.labels?.includes('Note')) return 'Note';
-    if (node.type === 'Entity' || node.labels?.includes('Entity')) return 'Entity';
-    if (node.type === 'Cluster' || node.labels?.includes('Cluster')) return 'Cluster';
-    if (node.type === 'Tag' || node.labels?.includes('Tag')) return 'Tag';
-    if (node.type === 'Thread' || node.labels?.includes('Thread')) return 'Thread';
+  private inferVertexType(vertex: any): string {
+    // Infer Kuzu vertex type from vertex properties
+    if (vertex.type === 'Note' || vertex.labels?.includes('Note')) return 'Note';
+    if (vertex.type === 'Entity' || vertex.labels?.includes('Entity')) return 'Entity';
+    if (vertex.type === 'Cluster' || vertex.labels?.includes('Cluster')) return 'Cluster';
+    if (vertex.type === 'Tag' || vertex.labels?.includes('Tag')) return 'Tag';
+    if (vertex.type === 'Thread' || vertex.labels?.includes('Thread')) return 'Thread';
     
     // Default fallback
     return 'Note';
   }
 
-  private buildNodeInsertQuery(nodeType: string, node: any): string {
-    const properties = Object.keys(node.properties || {}).join(', ');
-    const paramPlaceholders = Object.keys(node.properties || {})
+  private buildVertexInsertQuery(vertexType: string, vertex: any): string {
+    const properties = Object.keys(vertex.properties || {}).join(', ');
+    const paramPlaceholders = Object.keys(vertex.properties || {})
       .map(key => `${key}: $${key}`)
       .join(', ');
     
     return `
-      MERGE (n:${nodeType} {id: $id})
+      MERGE (n:${vertexType} {id: $id})
       SET ${paramPlaceholders.split(', ').map(p => `n.${p}`).join(', ')},
           n.updatedAt = datetime()
     `;
   }
 
-  private buildRelationshipInsertQuery(relationship: any): string {
-    const relType = relationship.type || 'LINKS_TO';
+  private buildEdgeInsertQuery(edge: any): string {
+    const relType = edge.type || 'LINKS_TO';
     
     return `
       MATCH (source {id: $sourceId})

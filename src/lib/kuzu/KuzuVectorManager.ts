@@ -1,30 +1,20 @@
 import { KuzuConnection } from './KuzuTypes';
-
-export interface VectorIndexConfig {
-  tableName: string;
-  indexName: string;
-  columnName: string;
-  parameters: {
-    M?: number;
-    efConstruction?: number;
-    metric?: 'cosine' | 'l2' | 'l2sq' | 'dotproduct';
-  };
-}
-
-export interface VectorIndexStatus {
-  indexName: string;
-  tableName: string;
-  isValid: boolean;
-  lastRebuilt?: string;
-  itemCount?: number;
-}
+import { VectorIndexConfig, VectorIndexStatus, HNSWParameters, VectorSearchOptions } from './KuzuVectorManagerTypes';
 
 /**
  * Manages vector indices and embeddings for Kuzu database
- * Handles the critical index immutability requirement
+ * Handles the critical index immutability requirement with enhanced memory optimization
  */
 export class KuzuVectorManager {
   private conn: KuzuConnection;
+  private readonly defaultHNSWParams: Required<HNSWParameters> = {
+    M: 16,
+    efConstruction: 200,
+    metric: 'cosine',
+    mu: 32, // Example default, verify Kuzu support
+    pu: 0.05,  // Example default, verify Kuzu support
+  };
+  
   private readonly vectorConfigs: VectorIndexConfig[] = [
     {
       tableName: 'Note',
@@ -119,23 +109,34 @@ export class KuzuVectorManager {
   }
 
   /**
-   * Create a single HNSW vector index
+   * Create a single HNSW vector index with enhanced parameterization
    */
   async createVectorIndex(config: VectorIndexConfig): Promise<void> {
-    const { tableName, indexName, columnName, parameters } = config;
-    const { M = 16, efConstruction = 200, metric = 'cosine' } = parameters;
+    const { tableName, indexName, columnName } = config;
+    // Merge provided params with manager defaults
+    const params: Required<HNSWParameters> = { ...this.defaultHNSWParams, ...config.parameters };
 
+    const paramStrings: string[] = [];
+    // Only include parameters that Kuzu's DDL supports
+    if (params.M !== undefined) paramStrings.push(`M=${params.M}`);
+    if (params.efConstruction !== undefined) paramStrings.push(`efConstruction=${params.efConstruction}`);
+    if (params.metric !== undefined) paramStrings.push(`metric='${params.metric}'`);
+    // Note: mu and pu parameters may not be supported by Kuzu yet
+    // if (params.mu !== undefined) paramStrings.push(`mu=${params.mu}`);
+    // if (params.pu !== undefined) paramStrings.push(`pu=${params.pu}`);
+
+    const ddlParameters = paramStrings.length > 0 ? `PARAMETERS (${paramStrings.join(', ')})` : '';
     const createIndexQuery = `
       CREATE INDEX IF NOT EXISTS ${indexName} ON ${tableName}(${columnName})
-      USING HNSW PARAMETERS (M=${M}, efConstruction=${efConstruction}, metric='${metric}')
+      USING HNSW ${ddlParameters}
     `;
 
     try {
       const result = await this.conn.query(createIndexQuery);
       await result.close();
-      console.log(`KuzuVectorManager: Created HNSW index ${indexName} for ${tableName}`);
+      console.log(`KuzuVectorManager: Index ${indexName} on ${tableName} created/verified with params: ${paramStrings.join(', ') || 'Kuzu defaults'}.`);
     } catch (error) {
-      console.error(`KuzuVectorManager: Failed to create index ${indexName}:`, error);
+      console.error(`KuzuVectorManager: Failed to create index ${indexName} on ${tableName}. Query: [${createIndexQuery.trim()}]`, error);
       throw error;
     }
   }
@@ -281,16 +282,10 @@ export class KuzuVectorManager {
   }
 
   /**
-   * Perform vector similarity search using CALL QUERY_VECTOR_INDEX
+   * Perform vector similarity search with enhanced memory optimization
    */
-  async vectorSearch(options: {
-    tableName: string;
-    queryVector: number[];
-    limit?: number;
-    filters?: Record<string, any>;
-    efs?: number;
-  }): Promise<any[]> {
-    const { tableName, queryVector, limit = 10, filters, efs = 200 } = options;
+  async vectorSearch(options: VectorSearchOptions): Promise<any[]> {
+    const { tableName, queryVector, limit = 10, filters, efs = 100 } = options;
     
     const config = this.vectorConfigs.find(c => c.tableName === tableName);
     if (!config) {
@@ -298,6 +293,7 @@ export class KuzuVectorManager {
     }
 
     let searchTable = tableName;
+    let temporaryProjectedGraphName: string | null = null;
     
     // Create filtered view if filters provided
     if (filters && Object.keys(filters).length > 0) {
@@ -316,7 +312,8 @@ export class KuzuVectorManager {
         .join(' AND ');
 
       if (filterConditions) {
-        searchTable = `filtered_${tableName.toLowerCase()}_${Date.now()}`;
+        searchTable = `temp_proj_${tableName}_${Date.now()}`;
+        temporaryProjectedGraphName = searchTable;
         
         const projectResult = await this.conn.query(`
           CALL PROJECT_GRAPH('${searchTable}', 
@@ -328,19 +325,33 @@ export class KuzuVectorManager {
       }
     }
 
-    // Perform vector search - using string interpolation for the query since we can't use parameters
-    const queryVectorString = `[${queryVector.join(', ')}]`;
-    const searchQuery = `
-      CALL QUERY_VECTOR_INDEX('${searchTable}', '${config.indexName}', ${queryVectorString}, ${limit}, efs := ${efs})
-      YIELD node AS found_node, distance AS similarity_distance
-      RETURN found_node, similarity_distance
-      ORDER BY similarity_distance ASC
-    `;
+    try {
+      // Perform vector search with configurable efs parameter
+      const queryVectorString = `[${queryVector.join(', ')}]`;
+      const searchQuery = `
+        CALL QUERY_VECTOR_INDEX('${searchTable}', '${config.indexName}', ${queryVectorString}, ${limit}, efs := ${efs})
+        YIELD node AS found_node, distance AS similarity_distance
+        RETURN found_node, similarity_distance
+        ORDER BY similarity_distance ASC
+      `;
 
-    const result = await this.conn.query(searchQuery);
-    const results = await result.getAllObjects();
-    await result.close();
+      const result = await this.conn.query(searchQuery);
+      const results = await result.getAllObjects();
+      await result.close();
 
-    return results;
+      return results;
+    } finally {
+      // Cleanup temporary projected graph if created
+      if (temporaryProjectedGraphName) {
+        try {
+          // Note: This cleanup might not be necessary if Kuzu auto-manages session graphs
+          // Uncomment if explicit cleanup is needed:
+          // await this.conn.query(`DROP PROJECTED GRAPH IF EXISTS ${temporaryProjectedGraphName}`);
+          // console.log(`KuzuVectorManager: Cleaned up temp projected graph ${temporaryProjectedGraphName}`);
+        } catch (cleanupError) {
+          console.warn(`KuzuVectorManager: Failed to cleanup temp projected graph ${temporaryProjectedGraphName}`, cleanupError);
+        }
+      }
+    }
   }
 }

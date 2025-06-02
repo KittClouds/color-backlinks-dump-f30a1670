@@ -34,3 +34,37 @@ export interface VectorSearchOptions {
   filters?: Record<string, any>;
   efs?: number;
 }
+
+/**
+ * Enhanced search options using logical index names
+ */
+export interface ManagedVectorSearchOptions {
+  logicalIndexName: string; // User provides the logical name
+  queryVector: number[];
+  limit?: number;
+  filters?: Record<string, any>;
+  efs?: number;
+}
+
+/**
+ * Internal state management for each managed vector index
+ */
+export interface ManagedIndexInternalState {
+  logicalName: string; // User-defined name, e.g., "notes_embeddings"
+  tableName: string;
+  columnName: string;
+  currentParameters: HNSWParameters; // The HNSWParameters for the active index
+  activePhysicalName: string; // Actual Kuzu index name, e.g., "notes_embeddings_v2"
+  isRebuilding: boolean;
+  lastRebuildAttempt?: Date;
+  lastSuccessfulRebuild?: Date;
+}
+
+/**
+ * Structure returned by Kuzu's SHOW_INDEXES command
+ */
+export interface KuzuIndexInfo {
+  indexName: string;
+  tableName: string;
+  propertyNames: string[];
+}

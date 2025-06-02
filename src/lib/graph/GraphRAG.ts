@@ -5,11 +5,7 @@
  * Enhances retrieval by using a graph structure to connect related content
  * and improve information retrieval through semantic connections.
  * 
- * TODO: GraphRAG Enhancements
- *  - Add support for more edge types (sequential, hierarchical, citation, etc)
- *  - Allow for custom edge types
- *  - Utilize metadata for richer connections
- *  - Improve graph traversal and querying using types
+ * Phase 2: Optimized for Kuzu integration with HNSW-powered initial scoring
  */
 
 type SupportedEdgeType = 'semantic';
@@ -40,6 +36,19 @@ export interface GraphChunk {
 
 export interface GraphEmbedding {
   vector: number[];
+}
+
+// Kuzu integration types
+export interface KuzuMemoryItem {
+  id: string;
+  content: string;
+  embedding?: number[];
+  metadata?: {
+    kuzuType?: string;
+    initialScore?: number;
+    similarity?: number;
+    [key: string]: any;
+  };
 }
 
 export class GraphRAG {
@@ -108,6 +117,71 @@ export class GraphRAG {
     node.content = newContent;
   }
 
+  /**
+   * NEW: Build graph from Kuzu memory service results
+   * Primary data ingestion method for Phase 2
+   */
+  buildFromKuzuResults(kuzuItems: KuzuMemoryItem[]): void {
+    console.log(`[GraphRAG] Building graph from ${kuzuItems.length} Kuzu memory items`);
+    
+    // Clear existing graph
+    this.clear();
+    
+    // Create nodes from Kuzu results
+    for (const item of kuzuItems) {
+      if (!item.embedding || item.embedding.length !== this.dimension) {
+        console.warn(`[GraphRAG] Skipping item ${item.id} - invalid embedding`);
+        continue;
+      }
+      
+      const node: GraphNode = {
+        id: item.id,
+        content: item.content,
+        embedding: item.embedding,
+        metadata: {
+          kuzuType: item.metadata?.kuzuType,
+          initialScore: item.metadata?.initialScore || item.metadata?.similarity,
+          ...item.metadata
+        }
+      };
+      
+      this.addNode(node);
+    }
+    
+    // Create semantic edges based on cosine similarity
+    const nodeArray = Array.from(this.nodes.values());
+    console.log(`[GraphRAG] Creating semantic edges for ${nodeArray.length} nodes with threshold ${this.threshold}`);
+    
+    let edgeCount = 0;
+    for (let i = 0; i < nodeArray.length; i++) {
+      const node1 = nodeArray[i];
+      for (let j = i + 1; j < nodeArray.length; j++) {
+        const node2 = nodeArray[j];
+        
+        const similarity = this.cosineSimilarity(node1.embedding!, node2.embedding!);
+        
+        if (similarity > this.threshold) {
+          this.addEdge({
+            source: node1.id,
+            target: node2.id,
+            weight: similarity,
+            type: 'semantic',
+          });
+          edgeCount++;
+        }
+      }
+    }
+    
+    console.log(`[GraphRAG] Created ${edgeCount} semantic edges`);
+  }
+
+  /**
+   * Alternative method name for clarity
+   */
+  buildContextualGraph(kuzuItems: KuzuMemoryItem[]): void {
+    this.buildFromKuzuResults(kuzuItems);
+  }
+
   // Get neighbors of a node
   private getNeighbors(nodeId: string, edgeType?: string): { id: string; weight: number }[] {
     return this.edges
@@ -135,7 +209,7 @@ export class GraphRAG {
     let normVec2 = 0;
 
     for (let i = 0; i < vectorLength; i++) {
-      const a = vec1[i]!; // Non-null assertion operator
+      const a = vec1[i]!;
       const b = vec2[i]!;
 
       dotProduct += a * b;
@@ -152,6 +226,7 @@ export class GraphRAG {
     return Math.max(-1, Math.min(1, similarity));
   }
 
+  // Legacy method for backward compatibility
   createGraph(chunks: GraphChunk[], embeddings: GraphEmbedding[]) {
     if (!chunks?.length || !embeddings?.length) {
       throw new Error('Chunks and embeddings arrays must not be empty');
@@ -159,6 +234,10 @@ export class GraphRAG {
     if (chunks.length !== embeddings.length) {
       throw new Error('Chunks and embeddings must have the same length');
     }
+    
+    // Clear existing graph
+    this.clear();
+    
     // Create nodes from chunks
     chunks.forEach((chunk, index) => {
       const node: GraphNode = {
@@ -168,7 +247,6 @@ export class GraphRAG {
         metadata: { ...chunk.metadata },
       };
       this.addNode(node);
-      this.nodes.set(node.id, node);
     });
 
     // Create edges based on cosine similarity
@@ -178,7 +256,6 @@ export class GraphRAG {
         const secondEmbedding = embeddings[j]?.vector as number[];
         const similarity = this.cosineSimilarity(firstEmbedding, secondEmbedding);
 
-        // Only create edges if similarity is above threshold
         if (similarity > this.threshold) {
           this.addEdge({
             source: i.toString(),
@@ -192,14 +269,9 @@ export class GraphRAG {
   }
 
   private selectWeightedNeighbor(neighbors: Array<{ id: string; weight: number }>): string {
-    // Sum all weights to normalize probabilities
     const totalWeight = neighbors.reduce((sum, n) => sum + n.weight, 0);
-
-    // Pick a random point in the total weight range
     let remainingWeight = Math.random() * totalWeight;
 
-    // Subtract each weight from our random value until we go below 0
-    // Higher weights will make us go below 0 more often, making them more likely to be selected
     for (const neighbor of neighbors) {
       remainingWeight -= neighbor.weight;
       if (remainingWeight <= 0) {
@@ -216,23 +288,19 @@ export class GraphRAG {
     let currentNodeId = startNodeId;
 
     for (let step = 0; step < steps; step++) {
-      // Record visit
       visits.set(currentNodeId, (visits.get(currentNodeId) || 0) + 1);
 
-      // Decide whether to restart
       if (Math.random() < restartProb) {
         currentNodeId = startNodeId;
         continue;
       }
 
-      // Get neighbors
       const neighbors = this.getNeighbors(currentNodeId);
       if (neighbors.length === 0) {
         currentNodeId = startNodeId;
         continue;
       }
 
-      // Select random weighted neighbor and set as current node
       currentNodeId = this.selectWeightedNeighbor(neighbors);
     }
 
@@ -246,7 +314,10 @@ export class GraphRAG {
     return normalizedVisits;
   }
 
-  // Retrieve relevant nodes using hybrid approach
+  /**
+   * OPTIMIZED: Retrieve relevant nodes using hybrid approach with Kuzu scores
+   * Phase 2: Leverages initialScore from Kuzu's HNSW search
+   */
   query({
     query,
     topK = 10,
@@ -270,44 +341,61 @@ export class GraphRAG {
     if (restartProb <= 0 || restartProb >= 1) {
       throw new Error('Restart probability must be between 0 and 1');
     }
-    // Retrieve nodes and calculate similarity
-    const similarities = Array.from(this.nodes.values()).map(node => ({
-      node,
-      similarity: this.cosineSimilarity(query, node.embedding!),
-    }));
 
-    // Sort by similarity
-    similarities.sort((a, b) => b.similarity - a.similarity);
-    const topNodes = similarities.slice(0, topK);
+    console.log(`[GraphRAG] Querying graph with ${this.nodes.size} nodes`);
 
-    // Re-ranks nodes using random walk with restart
+    // PHASE 2 OPTIMIZATION: Use Kuzu's HNSW scores when available
+    const nodeArray = Array.from(this.nodes.values());
+    const topNodesInitialPass = nodeArray.map(node => {
+      let similarity: number;
+      
+      // Prefer Kuzu's initialScore if available
+      if (node.metadata?.initialScore !== undefined) {
+        similarity = node.metadata.initialScore;
+        console.log(`[GraphRAG] Using Kuzu score ${similarity} for node ${node.id}`);
+      } else {
+        // Fallback to computing cosine similarity
+        similarity = this.cosineSimilarity(query, node.embedding!);
+        console.log(`[GraphRAG] Computing fallback similarity ${similarity} for node ${node.id}`);
+      }
+      
+      return { node, similarity };
+    }).sort((a, b) => b.similarity - a.similarity) // Higher scores are better
+      .slice(0, Math.max(topK, 20)); // Use at least 20 for random walk, or topK if larger
+
+    console.log(`[GraphRAG] Selected ${topNodesInitialPass.length} nodes for random walk reranking`);
+
+    // Re-rank nodes using random walk with restart
     const rerankedNodes = new Map<string, { node: GraphNode; score: number }>();
 
-    // For each top node, perform random walk
-    for (const { node, similarity } of topNodes) {
+    for (const { node, similarity: initialNodeSimilarityToQuery } of topNodesInitialPass) {
       const walkScores = this.randomWalkWithRestart(node.id, randomWalkSteps, restartProb);
 
-      // Combine dense retrieval score with graph score
+      // Combine Kuzu's initial score with graph walk score
       for (const [nodeId, walkScore] of walkScores) {
-        const node = this.nodes.get(nodeId)!;
+        const rerankedNode = this.nodes.get(nodeId)!;
         const existingScore = rerankedNodes.get(nodeId)?.score || 0;
         rerankedNodes.set(nodeId, {
-          node,
-          score: existingScore + similarity * walkScore,
+          node: rerankedNode,
+          score: existingScore + (initialNodeSimilarityToQuery * walkScore)
         });
       }
     }
 
     // Sort by final score and return top K nodes
-    return Array.from(rerankedNodes.values())
+    const finalResults = Array.from(rerankedNodes.values())
       .sort((a, b) => b.score - a.score)
       .slice(0, topK)
       .map(item => ({
         id: item.node.id,
         content: item.node.content,
+        embedding: item.node.embedding,
         metadata: item.node.metadata,
         score: item.score,
       }));
+
+    console.log(`[GraphRAG] Returning ${finalResults.length} reranked results`);
+    return finalResults;
   }
 }
 

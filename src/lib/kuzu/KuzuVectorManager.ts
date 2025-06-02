@@ -75,7 +75,8 @@ export class KuzuVectorManager {
 
     for (const query of alterQueries) {
       try {
-        await this.conn.query(query);
+        const result = await this.conn.query(query);
+        await result.close();
         console.log('KuzuVectorManager: Added column successfully');
       } catch (error) {
         console.warn('KuzuVectorManager: Column may already exist:', error);
@@ -105,7 +106,8 @@ export class KuzuVectorManager {
     `;
 
     try {
-      await this.conn.query(createIndexQuery);
+      const result = await this.conn.query(createIndexQuery);
+      await result.close();
       console.log(`KuzuVectorManager: Created HNSW index ${indexName} for ${tableName}`);
     } catch (error) {
       console.error(`KuzuVectorManager: Failed to create index ${indexName}:`, error);
@@ -143,7 +145,8 @@ export class KuzuVectorManager {
    */
   async dropVectorIndex(indexName: string): Promise<void> {
     try {
-      await this.conn.query(`DROP INDEX IF EXISTS ${indexName}`);
+      const result = await this.conn.query(`DROP INDEX IF EXISTS ${indexName}`);
+      await result.close();
       console.log(`KuzuVectorManager: Dropped index ${indexName}`);
     } catch (error) {
       console.warn(`KuzuVectorManager: Could not drop index ${indexName}:`, error);
@@ -163,8 +166,11 @@ export class KuzuVectorManager {
           count(n.embedding) as withEmbeddings
       `);
 
-      if (result.length > 0) {
-        const { total, withEmbeddings } = result[0];
+      const rows = await result.getAllObjects();
+      await result.close();
+
+      if (rows.length > 0) {
+        const { total, withEmbeddings } = rows[0];
         // If more than 10% of items lack embeddings in the index, consider it stale
         return (total - withEmbeddings) / total > 0.1;
       }
@@ -189,11 +195,14 @@ export class KuzuVectorManager {
           RETURN count(n) as itemCount
         `);
 
+        const rows = await result.getAllObjects();
+        await result.close();
+
         statuses.push({
           indexName: config.indexName,
           tableName: config.tableName,
           isValid: true,
-          itemCount: result[0]?.itemCount || 0,
+          itemCount: rows[0]?.itemCount || 0,
           lastRebuilt: new Date().toISOString()
         });
       } catch (error) {
@@ -246,12 +255,13 @@ export class KuzuVectorManager {
       if (filterConditions) {
         searchTable = `filtered_${tableName.toLowerCase()}_${Date.now()}`;
         
-        await this.conn.query(`
+        const projectResult = await this.conn.query(`
           CALL PROJECT_GRAPH('${searchTable}', 
             {'${tableName}': {'filter': '${filterConditions}'}}, 
             []
           )
         `);
+        await projectResult.close();
       }
     }
 
@@ -263,11 +273,14 @@ export class KuzuVectorManager {
       ORDER BY similarity_distance ASC
     `;
 
-    const results = await this.conn.query(searchQuery, {
+    const result = await this.conn.query(searchQuery, {
       queryVector,
       limit,
       efs
     });
+
+    const results = await result.getAllObjects();
+    await result.close();
 
     return results;
   }

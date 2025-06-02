@@ -40,12 +40,11 @@ export interface ContextualMemoryOptions {
  * Provides semantic search and contextual memory retrieval
  */
 export class KuzuMemoryService {
-  private vectorManager: KuzuVectorManager;
+  private vectorManager: KuzuVectorManager | null = null;
   private embeddingModel: any = null;
 
   constructor() {
     // Vector manager will be initialized when needed
-    this.vectorManager = null as any;
   }
 
   /**
@@ -53,7 +52,12 @@ export class KuzuMemoryService {
    */
   async initialize(): Promise<void> {
     await kuzuService.init();
-    const conn = new (await kuzuService.getDb()).constructor.Connection(await kuzuService.getDb());
+    const db = await kuzuService.getDb();
+    
+    // Get the Kuzu instance to create a connection
+    const kuzuInstance = (kuzuService as any).kuzu;
+    const conn = new kuzuInstance.Connection(db);
+    
     this.vectorManager = new KuzuVectorManager(conn);
     
     // Set up vector infrastructure
@@ -161,6 +165,10 @@ export class KuzuMemoryService {
       throw new Error('Query text is required for semantic search');
     }
 
+    if (!this.vectorManager) {
+      await this.initialize();
+    }
+
     const queryEmbedding = await this.generateEmbedding(options.query);
     const limit = options.limit || 10;
     
@@ -173,7 +181,7 @@ export class KuzuMemoryService {
     }
 
     // Search in Note table
-    const noteResults = await this.vectorManager.vectorSearch({
+    const noteResults = await this.vectorManager!.vectorSearch({
       tableName: 'Note',
       queryVector: queryEmbedding,
       limit,
@@ -182,7 +190,7 @@ export class KuzuMemoryService {
     });
 
     // Search in ThreadMessage table  
-    const messageResults = await this.vectorManager.vectorSearch({
+    const messageResults = await this.vectorManager!.vectorSearch({
       tableName: 'ThreadMessage',
       queryVector: queryEmbedding,
       limit,
@@ -239,6 +247,10 @@ export class KuzuMemoryService {
   async getContextualMemories(options: ContextualMemoryOptions): Promise<MemoryItem[]> {
     const { sourceId, sourceType, limit = 5, includeRelated = true } = options;
 
+    if (!this.vectorManager) {
+      await this.initialize();
+    }
+
     // Get the source item and its embedding
     const sourceTable = sourceType === 'note' ? 'Note' : 'ThreadMessage';
     const sourceResult = await kuzuService.query(`
@@ -256,7 +268,7 @@ export class KuzuMemoryService {
     }
 
     // Find similar memories
-    const similarMemories = await this.vectorManager.vectorSearch({
+    const similarMemories = await this.vectorManager!.vectorSearch({
       tableName: sourceTable,
       queryVector: sourceEmbedding,
       limit: limit + 1, // +1 to exclude self
@@ -359,6 +371,8 @@ export class KuzuMemoryService {
    * Check if indices need rebuilding and rebuild if necessary
    */
   private async checkAndRebuildIndices(): Promise<void> {
+    if (!this.vectorManager) return;
+
     const needsRebuild = await Promise.all([
       this.vectorManager.hasVectorIndexChanged('Note'),
       this.vectorManager.hasVectorIndexChanged('ThreadMessage')
@@ -379,10 +393,14 @@ export class KuzuMemoryService {
     avgImportance: number;
     indexStatus: any[];
   }> {
+    if (!this.vectorManager) {
+      await this.initialize();
+    }
+
     const [noteStats, messageStats, indexStatus] = await Promise.all([
       kuzuService.query('MATCH (n:Note) RETURN count(n) as total, avg(n.importance) as avgImportance'),
       kuzuService.query('MATCH (tm:ThreadMessage) RETURN count(tm) as total, avg(tm.importance) as avgImportance'),
-      this.vectorManager.getVectorIndexStatus()
+      this.vectorManager!.getVectorIndexStatus()
     ]);
 
     return {

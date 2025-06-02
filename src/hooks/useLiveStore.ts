@@ -1,234 +1,44 @@
 
 import { useStore } from '@livestore/react';
 import { 
+  notes$, 
+  threads$, 
+  threadMessages$, 
+  clusters$, 
+  blueprints$,
+  entityAttributes$,
+  activeNote$, 
   activeNoteId$, 
   activeClusterId$, 
   activeThreadId$,
-  activeNote$,
-  notes$,
-  clusters$,
-  activeClusterNotes$,
-  standardNotes$,
-  activeNoteConnections$,
-  entityAttributes$,
-  blueprints$,
-  // New entity queries
-  globalEntities$,
-  clusterEntitiesMap$,
-  folderEntitiesMap$,
-  activeNoteEntities$,
-  entitiesByType$,
-  entityReferenceCounts$,
-  recentEntities$,
-  orphanedEntities$,
-  allEntitiesArray$
-} from '../livestore/queries';
-// Import new cross-note relation queries
-import { 
-  entityCoOccurrences$, 
-  globalTriples$, 
-  createEntityGlobalRelationsQuery,
-  topCoOccurrences$,
-  topGlobalTriples$
-} from '../livestore/queries/derived';
-import { events } from '../livestore/schema';
+  activeClusterNotes$, 
+  standardNotes$, 
+  activeNoteConnections$, 
+  activeThreadMessages$,
+  uiState$
+} from '@/livestore/queries';
 
-// Custom hooks that wrap LiveStore usage with proper typing
-export function useActiveNoteId() {
-  const { store } = useStore();
-  const activeNoteId = store.useQuery(activeNoteId$);
-  
-  const setActiveNoteId = (id: string | null) => {
-    store.commit(events.uiStateSet({ 
-      activeNoteId: id,
-      activeClusterId: store.query(activeClusterId$),
-      activeThreadId: store.query(activeThreadId$),
-      graphInitialized: false,
-      graphLayout: 'dagre'
-    }));
-  };
+// Basic store hooks
+export const useNotes = () => useStore(notes$);
+export const useThreads = () => useStore(threads$);
+export const useThreadMessages = () => useStore(threadMessages$);
+export const useClusters = () => useStore(clusters$);
+export const useBlueprints = () => useStore(blueprints$);
+export const useEntityAttributes = () => useStore(entityAttributes$);
 
-  return [activeNoteId, setActiveNoteId] as const;
-}
+// Active state hooks
+export const useActiveNote = () => useStore(activeNote$);
+export const useActiveNoteId = () => useStore(activeNoteId$);
+export const useActiveClusterId = () => useStore(activeClusterId$);
+export const useActiveThreadId = () => useStore(activeThreadId$);
 
-export function useActiveClusterId() {
-  const { store } = useStore();
-  const activeClusterId = store.useQuery(activeClusterId$);
-  
-  const setActiveClusterId = (id: string) => {
-    store.commit(events.uiStateSet({ 
-      activeNoteId: store.query(activeNoteId$),
-      activeClusterId: id,
-      activeThreadId: store.query(activeThreadId$),
-      graphInitialized: false,
-      graphLayout: 'dagre'
-    }));
-  };
+// Filtered hooks
+export const useActiveClusterNotes = () => useStore(activeClusterNotes$);
+export const useStandardNotes = () => useStore(standardNotes$);
 
-  return [activeClusterId, setActiveClusterId] as const;
-}
+// Connection hooks
+export const useActiveNoteConnections = () => useStore(activeNoteConnections$);
+export const useActiveThreadMessages = () => useStore(activeThreadMessages$);
 
-export function useActiveNote() {
-  const { store } = useStore();
-  return store.useQuery(activeNote$);
-}
-
-export function useNotes() {
-  const { store } = useStore();
-  const notes = store.useQuery(notes$);
-  return Array.isArray(notes) ? notes : [];
-}
-
-export function useClusters() {
-  const { store } = useStore();
-  const clusters = store.useQuery(clusters$);
-  return Array.isArray(clusters) ? clusters : [];
-}
-
-export function useActiveClusterNotes() {
-  const { store } = useStore();
-  const notes = store.useQuery(activeClusterNotes$);
-  return Array.isArray(notes) ? notes : [];
-}
-
-export function useStandardNotes() {
-  const { store } = useStore();
-  const notes = store.useQuery(standardNotes$);
-  return Array.isArray(notes) ? notes : [];
-}
-
-export function useActiveNoteConnections() {
-  const { store } = useStore();
-  return store.useQuery(activeNoteConnections$);
-}
-
-export function useEntityAttributes() {
-  const { store } = useStore();
-  const attrs = store.useQuery(entityAttributes$);
-  return Array.isArray(attrs) ? attrs : [];
-}
-
-export function useBlueprintsArray() {
-  const { store } = useStore();
-  const blueprints = store.useQuery(blueprints$);
-  return Array.isArray(blueprints) ? blueprints : [];
-}
-
-// New entity-specific hooks
-export function useGlobalEntities() {
-  const { store } = useStore();
-  return store.useQuery(globalEntities$);
-}
-
-export function useAllEntitiesArray() {
-  const { store } = useStore();
-  return store.useQuery(allEntitiesArray$);
-}
-
-export function useClusterEntitiesMap() {
-  const { store } = useStore();
-  return store.useQuery(clusterEntitiesMap$);
-}
-
-export function useFolderEntitiesMap() {
-  const { store } = useStore();
-  return store.useQuery(folderEntitiesMap$);
-}
-
-export function useActiveNoteEntities() {
-  const { store } = useStore();
-  return store.useQuery(activeNoteEntities$);
-}
-
-export function useEntitiesByType() {
-  const { store } = useStore();
-  return store.useQuery(entitiesByType$);
-}
-
-export function useEntityReferenceCounts() {
-  const { store } = useStore();
-  return store.useQuery(entityReferenceCounts$);
-}
-
-export function useRecentEntities() {
-  const { store } = useStore();
-  return store.useQuery(recentEntities$);
-}
-
-export function useOrphanedEntities() {
-  const { store } = useStore();
-  return store.useQuery(orphanedEntities$);
-}
-
-// NEW: Cross-note relation hooks
-export function useEntityCoOccurrences() {
-  const { store } = useStore();
-  return store.useQuery(entityCoOccurrences$);
-}
-
-export function useGlobalTriples() {
-  const { store } = useStore();
-  return store.useQuery(globalTriples$);
-}
-
-export function useEntityGlobalRelations(entityId: string) {
-  const { store } = useStore();
-  const query = createEntityGlobalRelationsQuery(entityId);
-  return store.useQuery(query);
-}
-
-export function useTopCoOccurrences() {
-  const { store } = useStore();
-  return store.useQuery(topCoOccurrences$);
-}
-
-export function useTopGlobalTriples() {
-  const { store } = useStore();
-  return store.useQuery(topGlobalTriples$);
-}
-
-// Helper to commit note updates
-export function useNoteActions() {
-  const { store } = useStore();
-  
-  const updateNote = (id: string, updates: any) => {
-    store.commit(events.noteUpdated({
-      id,
-      updates,
-      updatedAt: new Date().toISOString()
-    }));
-  };
-
-  const createNote = (note: any) => {
-    store.commit(events.noteCreated(note));
-  };
-
-  const deleteNote = (id: string) => {
-    store.commit(events.noteDeleted({ id }));
-  };
-
-  const createCluster = (cluster: any) => {
-    store.commit(events.clusterCreated(cluster));
-  };
-
-  const updateCluster = (id: string, updates: any) => {
-    store.commit(events.clusterUpdated({
-      id,
-      updates,
-      updatedAt: new Date().toISOString()
-    }));
-  };
-
-  const deleteCluster = (id: string) => {
-    store.commit(events.clusterDeleted({ id }));
-  };
-
-  return { 
-    updateNote, 
-    createNote, 
-    deleteNote,
-    createCluster,
-    updateCluster,
-    deleteCluster
-  };
-}
+// UI state
+export const useUIState = () => useStore(uiState$);

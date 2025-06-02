@@ -147,9 +147,7 @@ export const activeNoteConnections$ = computed((get) => {
   };
 }, { label: 'activeNoteConnections$' });
 
-// NEW: Cross-Note Relation Engine queries
-// These provide reactive access to the computed cross-note relationships
-
+// Cross-Note Relation Engine queries
 export const entityCoOccurrences$ = computed((get) => {
   const entitiesMap = get(noteEntitiesMap$);
   const triplesMap = get(noteTriplesMap$);

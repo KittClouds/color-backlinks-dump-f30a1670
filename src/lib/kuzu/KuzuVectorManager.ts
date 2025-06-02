@@ -265,20 +265,16 @@ export class KuzuVectorManager {
       }
     }
 
-    // Perform vector search
+    // Perform vector search - using string interpolation for the query since we can't use parameters
+    const queryVectorString = `[${queryVector.join(', ')}]`;
     const searchQuery = `
-      CALL QUERY_VECTOR_INDEX('${searchTable}', '${config.indexName}', $queryVector, $limit, efs := $efs)
+      CALL QUERY_VECTOR_INDEX('${searchTable}', '${config.indexName}', ${queryVectorString}, ${limit}, efs := ${efs})
       YIELD node AS found_node, distance AS similarity_distance
       RETURN found_node, similarity_distance
       ORDER BY similarity_distance ASC
     `;
 
-    const result = await this.conn.query(searchQuery, {
-      queryVector,
-      limit,
-      efs
-    });
-
+    const result = await this.conn.query(searchQuery);
     const results = await result.getAllObjects();
     await result.close();
 

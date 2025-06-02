@@ -1,3 +1,4 @@
+
 import { KuzuVectorManager } from '@/lib/kuzu/KuzuVectorManager';
 import { KuzuConnection } from '@/lib/kuzu/KuzuTypes';
 import kuzuService from '@/lib/kuzu/KuzuService';
@@ -25,7 +26,6 @@ export interface SearchOptions {
   dateRange?: { start?: string; end?: string };
   limit?: number;
   efs?: number;
-  threadId?: string; // NEW: For thread-specific search
 }
 
 export interface ContextualMemoryOptions {
@@ -33,13 +33,6 @@ export interface ContextualMemoryOptions {
   sourceType: 'note' | 'thread_message';
   limit?: number;
   includeRelated?: boolean;
-}
-
-export interface ThreadMemoryContext {
-  threadId: string;
-  relevantMemories: MemoryItem[];
-  conversationSummary?: string;
-  keyEntities?: string[];
 }
 
 /**
@@ -92,122 +85,76 @@ export class KuzuMemoryService {
   }
 
   /**
-   * Store a new memory item from LiveStore data
+   * Store a new memory item
    */
-  async storeMemoryFromLiveStore(options: {
-    sourceId: string;
+  async storeMemory(options: {
     content: string;
     type: 'note' | 'chat_message';
-    threadId?: string;
-    role?: string;
     userId?: string;
     categoryId?: string;
     importance?: number;
     metadata?: Record<string, any>;
   }): Promise<string> {
-    const { sourceId, content, type, threadId, role, userId, categoryId, importance = 0.5, metadata = {} } = options;
+    const { content, type, userId, categoryId, importance = 0.5, metadata = {} } = options;
     
-    const memoryId = `memory_${type}_${sourceId}`;
+    const id = `memory_${type}_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const embedding = await this.generateEmbedding(content);
     const now = new Date().toISOString();
 
     if (type === 'note') {
       await kuzuService.query(`
-        MERGE (n:Note {id: $sourceId})
-        SET n.embedding = $embedding,
-            n.importance = $importance,
-            n.userId = $userId,
-            n.categoryId = $categoryId,
-            n.accessCount = COALESCE(n.accessCount, 0),
-            n.lastAccessedAt = $now,
-            n.updatedAt = $now
+        CREATE (n:Note {
+          id: $id,
+          title: $title,
+          content: $content,
+          type: 'note',
+          importance: $importance,
+          userId: $userId,
+          categoryId: $categoryId,
+          embedding: $embedding,
+          accessCount: 0,
+          lastAccessedAt: $now,
+          createdAt: $now,
+          updatedAt: $now
+        })
       `, {
-        sourceId,
-        embedding,
+        id,
+        title: content.substring(0, 100) + (content.length > 100 ? '...' : ''),
+        content,
         importance,
         userId,
         categoryId,
+        embedding,
         now
       });
     } else if (type === 'chat_message') {
       await kuzuService.query(`
-        MERGE (tm:ThreadMessage {id: $sourceId})
-        SET tm.embedding = $embedding,
-            tm.importance = $importance,
-            tm.accessCount = COALESCE(tm.accessCount, 0),
-            tm.lastAccessedAt = $now,
-            tm.updatedAt = $now
+        CREATE (tm:ThreadMessage {
+          id: $id,
+          content: $content,
+          role: $role,
+          importance: $importance,
+          embedding: $embedding,
+          accessCount: 0,
+          lastAccessedAt: $now,
+          createdAt: $now,
+          updatedAt: $now
+        })
       `, {
-        sourceId,
-        embedding,
+        id,
+        content,
+        role: metadata.role || 'user',
         importance,
+        embedding,
         now
       });
-
-      // Create relationship to thread if threadId provided
-      if (threadId) {
-        await kuzuService.query(`
-          MATCH (tm:ThreadMessage {id: $sourceId})
-          MERGE (t:Thread {id: $threadId})
-          MERGE (tm)-[:BELONGS_TO]->(t)
-        `, { sourceId, threadId });
-      }
     }
 
     // Trigger index rebuild if needed
     await this.checkAndRebuildIndices();
 
-    console.log(`KuzuMemoryService: Stored ${type} memory for ${sourceId}`);
-    return memoryId;
-  }
-
-  /**
-   * NEW: Get thread memory context for chat interactions
-   */
-  async getThreadMemoryContext(threadId: string, currentMessage?: string, limit: number = 5): Promise<ThreadMemoryContext> {
-    if (!this.vectorManager) {
-      await this.initialize();
-    }
-
-    let relevantMemories: MemoryItem[] = [];
-
-    // If we have a current message, use semantic search
-    if (currentMessage) {
-      const searchResults = await this.searchMemories({
-        query: currentMessage,
-        threadId,
-        limit
-      });
-      relevantMemories = searchResults;
-    } else {
-      // Otherwise, get recent messages from this thread
-      const recentMessages = await kuzuService.query(`
-        MATCH (tm:ThreadMessage)-[:BELONGS_TO]->(t:Thread {id: $threadId})
-        WHERE tm.embedding IS NOT NULL
-        RETURN tm
-        ORDER BY tm.createdAt DESC
-        LIMIT $limit
-      `, { threadId, limit });
-
-      relevantMemories = recentMessages.map(r => ({
-        id: r.tm.id,
-        content: r.tm.content,
-        type: 'chat_message' as const,
-        importance: r.tm.importance || 0.5,
-        accessCount: r.tm.accessCount || 0,
-        lastAccessedAt: r.tm.lastAccessedAt,
-        createdAt: r.tm.createdAt,
-        updatedAt: r.tm.updatedAt,
-        metadata: { threadId, role: r.tm.role }
-      }));
-    }
-
-    return {
-      threadId,
-      relevantMemories,
-      conversationSummary: await this.generateConversationSummary(threadId),
-      keyEntities: await this.extractThreadEntities(threadId)
-    };
+    console.log(`KuzuMemoryService: Stored ${type} memory ${id}`);
+    return id;
   }
 
   /**
@@ -233,53 +180,23 @@ export class KuzuMemoryService {
       filters.importance = { operator: '>=', value: options.importance.min };
     }
 
-    let noteResults: any[] = [];
-    let messageResults: any[] = [];
-
     // Search in Note table
-    try {
-      noteResults = await this.vectorManager!.vectorSearch({
-        tableName: 'Note',
-        queryVector: queryEmbedding,
-        limit,
-        filters,
-        efs: options.efs
-      });
-    } catch (error) {
-      console.warn('Note search failed:', error);
-    }
+    const noteResults = await this.vectorManager!.vectorSearch({
+      tableName: 'Note',
+      queryVector: queryEmbedding,
+      limit,
+      filters,
+      efs: options.efs
+    });
 
-    // Search in ThreadMessage table with optional thread filtering
-    try {
-      let messageFilters = { ...filters };
-      if (options.threadId) {
-        // Add thread filtering through relationship
-        const threadFilteredMessages = await kuzuService.query(`
-          MATCH (tm:ThreadMessage)-[:BELONGS_TO]->(t:Thread {id: $threadId})
-          WHERE tm.embedding IS NOT NULL
-          RETURN tm.id as id
-        `, { threadId: options.threadId });
-        
-        const threadMessageIds = threadFilteredMessages.map(r => r.id);
-        if (threadMessageIds.length > 0) {
-          messageFilters.id = { operator: 'IN', value: threadMessageIds };
-        } else {
-          messageResults = []; // No messages in this thread
-        }
-      }
-
-      if (!options.threadId || messageFilters.id) {
-        messageResults = await this.vectorManager!.vectorSearch({
-          tableName: 'ThreadMessage',
-          queryVector: queryEmbedding,
-          limit,
-          filters: messageFilters,
-          efs: options.efs
-        });
-      }
-    } catch (error) {
-      console.warn('Message search failed:', error);
-    }
+    // Search in ThreadMessage table  
+    const messageResults = await this.vectorManager!.vectorSearch({
+      tableName: 'ThreadMessage',
+      queryVector: queryEmbedding,
+      limit,
+      filters,
+      efs: options.efs
+    });
 
     // Combine and format results
     const allResults = [
@@ -299,14 +216,14 @@ export class KuzuMemoryService {
       await kuzuService.query(`
         MATCH (n:Note) WHERE n.id IN $ids 
         SET n.accessCount = n.accessCount + 1, n.lastAccessedAt = $now
-      `);
+      `, { ids: noteIds, now: new Date().toISOString() });
     }
 
     if (messageIds.length > 0) {
       await kuzuService.query(`
         MATCH (tm:ThreadMessage) WHERE tm.id IN $ids 
         SET tm.accessCount = tm.accessCount + 1, tm.lastAccessedAt = $now  
-      `);
+      `, { ids: messageIds, now: new Date().toISOString() });
     }
 
     return topResults.map(r => ({
@@ -320,38 +237,8 @@ export class KuzuMemoryService {
       lastAccessedAt: new Date().toISOString(),
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
-      metadata: { similarity: r.similarity, threadId: r.threadId }
+      metadata: { similarity: r.similarity }
     }));
-  }
-
-  /**
-   * Generate conversation summary for a thread
-   */
-  private async generateConversationSummary(threadId: string): Promise<string> {
-    const messages = await kuzuService.query(`
-      MATCH (tm:ThreadMessage)-[:BELONGS_TO]->(t:Thread {id: $threadId})
-      RETURN tm.content as content, tm.role as role
-      ORDER BY tm.createdAt ASC
-      LIMIT 10
-    `, { threadId });
-
-    if (messages.length === 0) return '';
-
-    // Simple summarization - in practice, use an LLM
-    const summary = messages
-      .map(m => `${m.role}: ${m.content.substring(0, 100)}`)
-      .join('\n');
-    
-    return `Conversation summary:\n${summary}`;
-  }
-
-  /**
-   * Extract key entities from thread messages
-   */
-  private async extractThreadEntities(threadId: string): Promise<string[]> {
-    // This would integrate with your existing entity extraction
-    // For now, return placeholder entities
-    return ['entity1', 'entity2'];
   }
 
   /**
@@ -369,7 +256,7 @@ export class KuzuMemoryService {
     const sourceResult = await kuzuService.query(`
       MATCH (n:${sourceTable}) WHERE n.id = $sourceId
       RETURN n.embedding as embedding, n.content as content
-    `);
+    `, { sourceId });
 
     if (sourceResult.length === 0) {
       return [];
@@ -417,14 +304,14 @@ export class KuzuMemoryService {
       MATCH (n:Note) WHERE n.id = $id
       SET n.importance = $importance, n.updatedAt = $now
       RETURN n.id
-    `);
+    `, { id, importance, now });
 
     if (noteResult.length === 0) {
       // Try ThreadMessage table
       await kuzuService.query(`
         MATCH (tm:ThreadMessage) WHERE tm.id = $id
         SET tm.importance = $importance, tm.updatedAt = $now
-      `);
+      `, { id, importance, now });
     }
 
     console.log(`KuzuMemoryService: Updated importance for ${id} to ${importance}`);

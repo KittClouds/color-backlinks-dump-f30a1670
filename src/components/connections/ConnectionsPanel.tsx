@@ -1,7 +1,7 @@
 import { useActiveNote, useActiveNoteConnections } from '@/hooks/useLiveStore';
 import { useGraph } from '@/contexts/GraphContext'; // Keep for backlinks
 import { Badge } from '@/components/ui/badge';
-import { Link, ChevronDown, ChevronUp, Hash, AtSign, Database, Network, Brain } from 'lucide-react';
+import { Link, ChevronDown, ChevronUp, Hash, AtSign, Database, Network } from 'lucide-react';
 import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,23 +9,18 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { SchemaManager } from "../schema/SchemaManager";
 import { EntityPanel } from "./EntityPanel";
 import { RelatedPanel } from "./RelatedPanel";
-import { MemoryPanel } from "./MemoryPanel";
 import { ScopeSelector } from "./ScopeSelector";
 import { useEntitiesForScope } from "@/hooks/useEntitiesForScope";
-import { useMemorySync } from "@/hooks/useMemorySync";
 
 export function ConnectionsPanel() {
   const activeNote = useActiveNote();
   const connections = useActiveNoteConnections();
   const { getBacklinks } = useGraph(); // Only need backlinks from graph context now
   const [isOpen, setIsOpen] = useState(false);
-  const [activeView, setActiveView] = useState<'links' | 'backlinks' | 'entities' | 'related' | 'memory'>('memory'); // Default to memory
+  const [activeView, setActiveView] = useState<'links' | 'backlinks' | 'entities' | 'related'>('entities'); // Default to entities
   
   // Use the new scope-aware entity hook
   const entitiesScope = useEntitiesForScope();
-  
-  // Initialize memory sync
-  useMemorySync();
   
   const backlinks = activeNote?.id ? getBacklinks(activeNote.id) : [];
   const { tags = [], mentions = [], links = [] } = connections;
@@ -53,14 +48,6 @@ export function ConnectionsPanel() {
             
             <div className="p-4 space-y-4 max-h-[300px] overflow-auto">
               <div className="flex justify-center space-x-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => setActiveView('memory')}
-                  className={`px-4 ${activeView === 'memory' ? 'bg-[#1a1b23] text-primary' : 'text-muted-foreground'}`}
-                >
-                  <Brain className="mr-2 h-4 w-4" />
-                  Memory
-                </Button>
                 <Button
                   variant="ghost"
                   onClick={() => setActiveView('links')}
@@ -95,9 +82,7 @@ export function ConnectionsPanel() {
                 </Button>
               </div>
 
-              {activeView === 'memory' ? (
-                <MemoryPanel />
-              ) : activeView === 'links' ? (
+              {activeView === 'links' ? (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Card className="bg-[#12141f] border-[#1a1b23]">
                     <CardContent className="p-4">
@@ -110,7 +95,7 @@ export function ConnectionsPanel() {
                           <div className="flex flex-wrap gap-2">
                             {tags.map((tag) => (
                               <Badge
-                                key={tag}
+                                key={tag} // Use tag string as key
                                 variant="secondary"
                                 className="bg-[#1a1b23] hover:bg-[#22242f] text-primary border-none"
                               >
@@ -138,7 +123,7 @@ export function ConnectionsPanel() {
                           <div className="space-y-1">
                             {mentions.map((mention) => (
                               <div
-                                key={mention}
+                                key={mention} // Use mention string as key
                                 className="text-sm px-2 py-1 rounded-md bg-[#1a1b23] hover:bg-[#22242f] cursor-pointer transition-colors flex items-center"
                               >
                                 @{mention}
@@ -165,7 +150,7 @@ export function ConnectionsPanel() {
                           <div className="space-y-1">
                             {links.map((linkTitle) => (
                               <div
-                                key={linkTitle}
+                                key={linkTitle} // Use link title as key
                                 className="text-sm px-2 py-1 rounded-md bg-[#1a1b23] hover:bg-[#22242f] cursor-pointer transition-colors flex items-center"
                               >
                                 [[{linkTitle}]]

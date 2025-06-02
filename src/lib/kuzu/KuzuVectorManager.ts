@@ -1,4 +1,3 @@
-
 import { KuzuConnection } from './KuzuTypes';
 
 export interface VectorIndexConfig {
@@ -94,6 +93,32 @@ export class KuzuVectorManager {
   }
 
   /**
+   * Creates all configured vector indices asynchronously.
+   * This method attempts to run index creation operations in parallel from the client-side.
+   */
+  async createVectorIndicesOptimized(): Promise<void> {
+    const createPromises = this.vectorConfigs.map(config =>
+      this.createVectorIndex(config)
+        .then(() => ({ success: true, config }))
+        .catch(err => {
+          console.error(`KuzuVectorManager: Failed to create index ${config.indexName} for ${config.tableName}:`, err.message);
+          return { success: false, config, error: err.message };
+        })
+    );
+
+    const results = await Promise.allSettled(createPromises);
+    const allSucceeded = results.every(r => 
+      r.status === 'fulfilled' && r.value?.success !== false
+    );
+    
+    if (!allSucceeded) {
+      console.warn("KuzuVectorManager: One or more index creation tasks failed during optimized batch creation.");
+    } else {
+      console.log("KuzuVectorManager: All optimized index creation tasks completed.");
+    }
+  }
+
+  /**
    * Create a single HNSW vector index
    */
   async createVectorIndex(config: VectorIndexConfig): Promise<void> {
@@ -137,6 +162,44 @@ export class KuzuVectorManager {
       } catch (error) {
         console.error(`KuzuVectorManager: Failed to rebuild index ${config.indexName}:`, error);
       }
+    }
+  }
+
+  /**
+   * Rebuilds specified (or all) vector indices asynchronously.
+   * For each index, it drops and then recreates it.
+   * The rebuilding process for different indices is attempted in parallel.
+   */
+  async rebuildVectorIndexesOptimized(tableNames?: string[]): Promise<void> {
+    const configsToRebuild = tableNames
+      ? this.vectorConfigs.filter(c => tableNames.includes(c.tableName))
+      : this.vectorConfigs;
+
+    console.log(`KuzuVectorManager: Rebuilding ${configsToRebuild.length} vector indices (optimized)...`);
+
+    const rebuildPromises = configsToRebuild.map(config =>
+      (async () => {
+        try {
+          await this.dropVectorIndex(config.indexName);
+          await this.createVectorIndex(config);
+          console.log(`KuzuVectorManager: Successfully rebuilt index ${config.indexName} via optimized path.`);
+          return { success: true, config };
+        } catch (error) {
+          console.error(`KuzuVectorManager: Failed to rebuild index ${config.indexName} via optimized path:`, error.message);
+          return { success: false, config, error: error.message };
+        }
+      })()
+    );
+
+    const results = await Promise.allSettled(rebuildPromises);
+    const allSucceeded = results.every(r => 
+      r.status === 'fulfilled' && r.value?.success !== false
+    );
+    
+    if (!allSucceeded) {
+      console.warn("KuzuVectorManager: One or more index rebuild tasks failed during optimized batch rebuild.");
+    } else {
+      console.log("KuzuVectorManager: All optimized index rebuild tasks completed.");
     }
   }
 

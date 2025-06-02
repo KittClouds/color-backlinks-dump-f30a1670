@@ -1,5 +1,5 @@
-
 import { jsonSchemaRegistry } from '@/json-manager/schemas';
+import { KuzuVectorManager } from './KuzuVectorManager';
 
 export interface KuzuSchemaVersion {
   version: string;
@@ -20,6 +20,7 @@ export class KuzuSchemaManager {
   private conn: any;
   private currentVersion = '1.0.0';
   private appliedVersions: Set<string> = new Set();
+  private vectorManager: KuzuVectorManager | null = null;
 
   constructor(connection: any) {
     this.conn = connection;
@@ -38,8 +39,14 @@ export class KuzuSchemaManager {
       // Then create relationship tables
       await this.createRelationshipTables();
       
+      // Create memory-specific tables
+      await this.createMemoryTables();
+      
       // Finally create indices for performance
       await this.createIndices();
+      
+      // Initialize vector support
+      await this.initializeVectorSupport();
       
       // Mark schema as initialized
       this.appliedVersions.add(this.currentVersion);
@@ -169,6 +176,72 @@ export class KuzuSchemaManager {
   }
 
   /**
+   * Create memory-specific tables
+   */
+  private async createMemoryTables(): Promise<void> {
+    console.log('KuzuSchemaManager: Creating memory tables...');
+
+    const memoryTableQueries = [
+      // User profiles
+      `CREATE NODE TABLE IF NOT EXISTS UserProfile (
+        id STRING PRIMARY KEY,
+        name STRING,
+        preferences STRING,
+        createdAt TIMESTAMP,
+        updatedAt TIMESTAMP
+      )`,
+
+      // Memory categories
+      `CREATE NODE TABLE IF NOT EXISTS MemoryCategory (
+        id STRING PRIMARY KEY,
+        name STRING,
+        description STRING,
+        color STRING,
+        userId STRING,
+        isDefault BOOLEAN,
+        createdAt TIMESTAMP,
+        updatedAt TIMESTAMP
+      )`
+    ];
+
+    for (const query of memoryTableQueries) {
+      await this.conn.execute(query);
+      console.log('KuzuSchemaManager: Created memory table');
+    }
+
+    // Memory-specific relationships
+    const memoryRelQueries = [
+      `CREATE REL TABLE IF NOT EXISTS OWNED_BY FROM Note TO UserProfile (ON DELETE CASCADE)`,
+      `CREATE REL TABLE IF NOT EXISTS CATEGORIZED_AS FROM Note TO MemoryCategory (ON DELETE SET NULL)`,
+      `CREATE REL TABLE IF NOT EXISTS MESSAGE_OWNED_BY FROM ThreadMessage TO UserProfile (ON DELETE CASCADE)`
+    ];
+
+    for (const query of memoryRelQueries) {
+      await this.conn.execute(query);
+      console.log('KuzuSchemaManager: Created memory relationship');
+    }
+  }
+
+  /**
+   * Initialize vector support with the new vector manager
+   */
+  private async initializeVectorSupport(): Promise<void> {
+    try {
+      this.vectorManager = new KuzuVectorManager(this.conn);
+      
+      // Add embedding columns to all tables
+      await this.vectorManager.addEmbeddingColumns();
+      
+      // Create vector indices
+      await this.vectorManager.createVectorIndices();
+      
+      console.log('KuzuSchemaManager: Vector support initialized');
+    } catch (error) {
+      console.warn('KuzuSchemaManager: Vector support initialization failed:', error);
+    }
+  }
+
+  /**
    * Create performance indices
    */
   private async createIndices(): Promise<void> {
@@ -258,27 +331,33 @@ export class KuzuSchemaManager {
   }
 
   /**
-   * Add vector extension support (optional)
+   * Add vector extension support (enhanced)
    */
   async enableVectorExtension(): Promise<void> {
-    try {
-      console.log('KuzuSchemaManager: Enabling vector extension...');
-      
-      // Add embedding column to Entity table
-      await this.conn.execute(`
-        ALTER NODE TABLE Entity ADD COLUMN IF NOT EXISTS embedding FLOAT[1536]
-      `);
-
-      // Create HNSW index for vector search
-      await this.conn.execute(`
-        CREATE INDEX IF NOT EXISTS hnsw_entity_embedding
-        ON Entity(embedding)
-        USING HNSW PARAMETERS (M=16, efConstruction=200)
-      `);
-
+    if (this.vectorManager) {
+      await this.vectorManager.addEmbeddingColumns();
+      await this.vectorManager.createVectorIndices();
       console.log('KuzuSchemaManager: Vector extension enabled');
-    } catch (error) {
-      console.warn('KuzuSchemaManager: Vector extension not available or failed:', error);
+    } else {
+      await this.initializeVectorSupport();
+    }
+  }
+
+  /**
+   * Get vector manager instance
+   */
+  getVectorManager(): KuzuVectorManager | null {
+    return this.vectorManager;
+  }
+
+  /**
+   * Rebuild vector indices (for memory system maintenance)
+   */
+  async rebuildVectorIndices(tableNames?: string[]): Promise<void> {
+    if (this.vectorManager) {
+      await this.vectorManager.rebuildVectorIndexes(tableNames);
+    } else {
+      console.warn('KuzuSchemaManager: Vector manager not initialized');
     }
   }
 
@@ -288,8 +367,11 @@ export class KuzuSchemaManager {
   get schema(): string {
     return `Kuzu Graph Database Schema v${this.currentVersion}
     
-Node Tables: Note, Cluster, Tag, Mention, Entity, GlobalTriple, Thread, ThreadMessage
-Relationship Tables: CONTAINS, IN_CLUSTER, LINKS_TO, MENTIONS, HAS_TAG, MENTIONED_IN, SUBJECT_OF, OBJECT_OF, GLOBAL_TRIPLE_MEMBER, CO_OCCURS, IN_THREAD, REPLIES_TO
+Node Tables: Note, Cluster, Tag, Mention, Entity, 
+GlobalTriple, Thread, ThreadMessage
+Relationship Tables: CONTAINS, IN_CLUSTER, LINKS_TO, MENTIONS, HAS_TAG,
+MENTIONED_IN, SUBJECT_OF, OBJECT_OF, GLOBAL_TRIPLE_MEMBER,
+CO_OCCURS, IN_THREAD, REPLIES_TO
 Indices: Entity(kind,label), Note(slugTitle), Note(clusterId), Note(parentId)`;
   }
 

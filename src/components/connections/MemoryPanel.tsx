@@ -18,7 +18,7 @@ export function MemoryPanel() {
   const [stats, setStats] = useState<any>(null);
 
   const activeNote = useActiveNote();
-  const activeThreadId = useActiveThreadId();
+  const [activeThreadId] = useActiveThreadId();
 
   // Load memory stats on mount
   useEffect(() => {

@@ -58,8 +58,9 @@ export const useEntityAttributes = () => {
   return Array.isArray(result) ? result : [];
 };
 
-// Active state hooks that return single values
+// Active state hooks that return single values with setters
 export const useActiveNote = () => useStore(activeNote$);
+
 export const useActiveNoteId = () => {
   const activeNoteId = useStore(activeNoteId$);
   const setActiveNoteId = useCallback((noteId: string) => {
@@ -108,6 +109,27 @@ export const useUIState = () => useStore(uiState$);
 // Entity relation hooks
 export const useEntityCoOccurrences = () => useStore(entityCoOccurrences$);
 export const useGlobalTriples = () => useStore(globalTriples$);
+
+// Additional entity hooks for compatibility
+export const useActiveNoteEntities = () => {
+  const connections = useStore(activeNoteConnections$);
+  return connections?.entities || [];
+};
+
+export const useClusterEntitiesMap = () => {
+  // Return empty map for now - this would need proper implementation
+  return new Map();
+};
+
+export const useFolderEntitiesMap = () => {
+  // Return empty map for now - this would need proper implementation
+  return new Map();
+};
+
+export const useAllEntitiesArray = () => {
+  const entityAttributes = useStore(entityAttributes$);
+  return Array.isArray(entityAttributes) ? entityAttributes : [];
+};
 
 // Action hooks
 export const useNoteActions = () => {

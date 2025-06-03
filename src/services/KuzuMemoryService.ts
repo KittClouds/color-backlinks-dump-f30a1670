@@ -76,7 +76,7 @@ export class KuzuMemoryService {
         console.log('KuzuMemoryService: Initializing embedding model...');
         this.embeddingModel = await pipeline(
           'feature-extraction',
-          'mixedbread-ai/mxbai-embed-xsmall-v1',
+          'nomic-ai/modernbert-embed-base',
           { 
             device: 'webgpu',
             dtype: 'fp32'

@@ -1,4 +1,3 @@
-
 import { useStore } from '@livestore/react';
 import { 
   activeNoteId$, 
@@ -232,3 +231,6 @@ export function useNoteActions() {
     deleteCluster
   };
 }
+
+// Import SelectPills hooks
+export { useSelectPills } from './useSelectPills';

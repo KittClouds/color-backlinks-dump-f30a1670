@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { ChevronRight, File, Folder, Plus, MoreVertical, PenLine, Trash2 } from "lucide-react";
 import { 
@@ -15,6 +14,7 @@ import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGrou
 import { Button } from "./ui/button";
 import { ClusterView } from "./ClusterView";
 import { generateNoteId } from "@/lib/utils/ids";
+import { TagsSection } from "./sidebar/TagsSection";
 
 export function AppSidebar({
   ...props
@@ -104,6 +104,8 @@ export function AppSidebar({
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
+            
+            <TagsSection />
           </TabsContent>
           <TabsContent value="clusters" className="mt-0">
             <ClusterView />

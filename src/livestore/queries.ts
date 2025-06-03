@@ -1,4 +1,3 @@
-
 import { queryDb, computed } from '@livestore/livestore';
 import { tables } from './schema';
 import { parseAllNotes } from '@/lib/utils/parsingUtils';
@@ -228,3 +227,10 @@ export const entityGlobalRelations$ = (entityId: string) => computed((get) => {
     entityId
   };
 }, { label: `entityGlobalRelations$_${entityId}` });
+
+// Export SelectPills queries
+export {
+  availableTagsData$,
+  selectedTagsForNote$,
+  globalSelectedTags$
+} from './queries/selectPills';

@@ -19,6 +19,7 @@
     "@effect/platform-browser": "^0.64.0",
     "@effect/rpc": "^0.61.0",
     "@hookform/resolvers": "^3.9.0",
+    "@huggingface/transformers": "^3.5.2",
     "@livestore/adapter-web": "^0.3.0",
     "@livestore/devtools-vite": "^0.3.0",
     "@livestore/livestore": "^0.3.0",

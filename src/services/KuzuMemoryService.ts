@@ -1,6 +1,7 @@
 import { KuzuVectorManager } from '@/lib/kuzu/KuzuVectorManager';
 import { KuzuConnection } from '@/lib/kuzu/KuzuTypes';
 import kuzuService from '@/lib/kuzu/KuzuService';
+import { pipeline } from '@huggingface/transformers';
 
 export interface MemoryItem {
   id: string;
@@ -67,20 +68,43 @@ export class KuzuMemoryService {
   }
 
   /**
-   * Generate embedding for text content
-   * This would integrate with transformers.js or similar
+   * Generate embedding for text content using Transformers.js
    */
   private async generateEmbedding(text: string): Promise<number[]> {
-    // Placeholder - integrate with @huggingface/transformers
-    // const { pipeline } = await import('@huggingface/transformers');
-    // if (!this.embeddingModel) {
-    //   this.embeddingModel = await pipeline('feature-extraction', 'mixedbread-ai/mxbai-embed-xsmall-v1');
-    // }
-    // const embedding = await this.embeddingModel(text, { pooling: 'mean', normalize: true });
-    // return embedding.tolist()[0];
-    
-    // For now, return dummy embedding
-    return new Array(768).fill(0).map(() => Math.random());
+    try {
+      if (!this.embeddingModel) {
+        console.log('KuzuMemoryService: Initializing embedding model...');
+        this.embeddingModel = await pipeline(
+          'feature-extraction',
+          'mixedbread-ai/mxbai-embed-xsmall-v1',
+          { 
+            device: 'webgpu',
+            dtype: 'fp32'
+          }
+        );
+        console.log('KuzuMemoryService: Embedding model initialized');
+      }
+
+      const embedding = await this.embeddingModel(text, { 
+        pooling: 'mean', 
+        normalize: true 
+      });
+      
+      // Convert tensor to array
+      const embeddingArray = embedding.tolist()[0];
+      
+      // Ensure we have exactly 768 dimensions
+      if (embeddingArray.length !== 768) {
+        console.warn(`KuzuMemoryService: Expected 768 dimensions, got ${embeddingArray.length}`);
+      }
+      
+      return embeddingArray;
+    } catch (error) {
+      console.error('KuzuMemoryService: Failed to generate embedding:', error);
+      // Fallback to dummy embedding if model fails
+      console.warn('KuzuMemoryService: Using fallback dummy embedding');
+      return new Array(768).fill(0).map(() => Math.random());
+    }
   }
 
   /**

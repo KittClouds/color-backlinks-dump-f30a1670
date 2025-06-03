@@ -1,3 +1,4 @@
+
 import { KuzuConnection } from './KuzuTypes';
 import { 
   VectorIndexConfig, 
@@ -302,9 +303,9 @@ export class KuzuVectorManager {
    */
   async addEmbeddingColumns(): Promise<void> {
     const alterQueries = [
-      `ALTER NODE TABLE Note ADD COLUMN IF NOT EXISTS embedding FLOAT[1536]`,
-      `ALTER NODE TABLE ThreadMessage ADD COLUMN IF NOT EXISTS embedding FLOAT[1536]`,
-      `ALTER NODE TABLE Entity ADD COLUMN IF NOT EXISTS embedding FLOAT[1536]`,
+      `ALTER NODE TABLE Note ADD COLUMN IF NOT EXISTS embedding FLOAT[768]`,
+      `ALTER NODE TABLE ThreadMessage ADD COLUMN IF NOT EXISTS embedding FLOAT[768]`,
+      `ALTER NODE TABLE Entity ADD COLUMN IF NOT EXISTS embedding FLOAT[768]`,
       
       // Memory-specific fields for Note
       `ALTER NODE TABLE Note ADD COLUMN IF NOT EXISTS importance FLOAT DEFAULT 0.5`,

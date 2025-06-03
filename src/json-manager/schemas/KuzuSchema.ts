@@ -1,4 +1,3 @@
-
 import { JSONSchemaDefinition } from './JSONSchemaRegistry';
 
 /**
@@ -62,7 +61,7 @@ export const kuzuEntitySchema: JSONSchemaDefinition = {
       embedding: { 
         type: 'array',
         items: { type: 'number' },
-        maxItems: 1536
+        maxItems: 768
       }
     },
     required: ['id']
@@ -82,8 +81,8 @@ export const kuzuEntitySchema: JSONSchemaDefinition = {
       }
     }
     
-    if (data.embedding && (!Array.isArray(data.embedding) || data.embedding.length > 1536)) {
-      errors.push('Entity embedding must be array with max 1536 dimensions');
+    if (data.embedding && (!Array.isArray(data.embedding) || data.embedding.length > 768)) {
+      errors.push('Entity embedding must be array with max 768 dimensions');
     }
     
     return {

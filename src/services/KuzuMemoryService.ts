@@ -1,4 +1,3 @@
-
 import { KuzuVectorManager } from '@/lib/kuzu/KuzuVectorManager';
 import { KuzuConnection } from '@/lib/kuzu/KuzuTypes';
 import kuzuService from '@/lib/kuzu/KuzuService';
@@ -81,7 +80,7 @@ export class KuzuMemoryService {
     // return embedding.tolist()[0];
     
     // For now, return dummy embedding
-    return new Array(1536).fill(0).map(() => Math.random());
+    return new Array(768).fill(0).map(() => Math.random());
   }
 
   /**

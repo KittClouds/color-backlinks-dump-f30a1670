@@ -57,7 +57,7 @@ export class GraphRAG {
   private dimension: number;
   private threshold: number;
 
-  constructor(dimension: number = 1536, threshold: number = 0.7) {
+  constructor(dimension: number = 768, threshold: number = 0.7) {
     this.nodes = new Map();
     this.edges = [];
     this.dimension = dimension;
@@ -400,5 +400,5 @@ export class GraphRAG {
 }
 
 // Export a singleton instance for easy imports
-export const graphRag = new GraphRAG(1536, 0.7);
+export const graphRag = new GraphRAG(768, 0.7);
 export default graphRag;

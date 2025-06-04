@@ -3,22 +3,43 @@ import { useStore } from '@livestore/react';
 import { notes$, activeNoteId$ } from '../livestore/queries';
 import { computed } from '@livestore/livestore';
 
-// FIXED: Helper function to extract raw text from note content for backlink search
-function extractTextFromNoteContent(content: any[]): string {
-  if (!Array.isArray(content)) return '';
+// ENHANCED: Helper function to extract both raw text and backlink inline specs from note content
+function extractBacklinksFromNoteContent(content: any[], targetTitle: string): boolean {
+  if (!Array.isArray(content)) return false;
   
-  return content.map(block => {
-    if (!block.content || !Array.isArray(block.content)) return '';
-    return block.content.map((item: any) => {
-      if (item.type === 'text' && 'text' in item) {
-        return item.text;
+  let foundBacklink = false;
+  
+  const walkBlock = (block: any) => {
+    if (!block.content || !Array.isArray(block.content)) return;
+    
+    for (const item of block.content) {
+      // Check for highlighted backlink inline specs
+      if (item.type === 'backlink' && item.props?.text === targetTitle) {
+        foundBacklink = true;
+        return;
       }
-      return '';
-    }).join('');
-  }).join('\n');
+      
+      // Check for raw text containing backlink syntax
+      if (item.type === 'text' && item.text) {
+        const backlinkPattern = new RegExp(`<<\\s*${targetTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(?:\\|[^>]*)?>>`, 'g');
+        if (backlinkPattern.test(item.text)) {
+          foundBacklink = true;
+          return;
+        }
+      }
+    }
+    
+    // Recursively check nested blocks
+    if (block.children && Array.isArray(block.children)) {
+      block.children.forEach(walkBlock);
+    }
+  };
+  
+  content.forEach(walkBlock);
+  return foundBacklink;
 }
 
-// FIXED: Hook to get backlinks for a specific note title
+// ENHANCED: Hook to get backlinks for a specific note title
 export function useNoteBacklinks(currentNoteTitle: string) {
   const { store } = useStore();
   
@@ -34,18 +55,13 @@ export function useNoteBacklinks(currentNoteTitle: string) {
     
     const backlinks: Array<{ id: string; title: string }> = [];
     
-    // FIXED: Search for <<currentNoteTitle>> syntax directly in note content
+    // ENHANCED: Search for both raw and highlighted backlinks
     allNotes.forEach(note => {
       // Skip the current note itself
       if (note.title === currentNoteTitle) return;
       
-      // Extract raw text from note content
-      const noteText = extractTextFromNoteContent(note.content || []);
-      
-      // FIXED: Look for <<currentNoteTitle>> syntax (backlinks)
-      const backlinkPattern = new RegExp(`<<\\s*${currentNoteTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(?:\\|[^>]*)?>>`, 'g');
-      
-      if (backlinkPattern.test(noteText)) {
+      // Check for backlinks using enhanced function
+      if (extractBacklinksFromNoteContent(note.content || [], currentNoteTitle)) {
         backlinks.push({
           id: note.id,
           title: note.title
@@ -61,7 +77,7 @@ export function useNoteBacklinks(currentNoteTitle: string) {
   return store.useQuery(backlinksQuery);
 }
 
-// FIXED: Hook to get backlinks for the currently active note
+// ENHANCED: Hook to get backlinks for the currently active note
 export function useActiveNoteBacklinks() {
   const { store } = useStore();
   
@@ -80,17 +96,12 @@ export function useActiveNoteBacklinks() {
     
     const backlinks: Array<{ id: string; title: string }> = [];
     
-    // FIXED: Search for <<activeNote.title>> syntax directly in note content
+    // ENHANCED: Search for both raw and highlighted backlinks
     allNotes.forEach(note => {
       if (note.id === activeNoteId) return; // Skip self-references
       
-      // Extract raw text from note content
-      const noteText = extractTextFromNoteContent(note.content || []);
-      
-      // FIXED: Look for <<activeNote.title>> syntax (backlinks)
-      const backlinkPattern = new RegExp(`<<\\s*${activeNote.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(?:\\|[^>]*)?>>`, 'g');
-      
-      if (backlinkPattern.test(noteText)) {
+      // Check for backlinks using enhanced function
+      if (extractBacklinksFromNoteContent(note.content || [], activeNote.title)) {
         backlinks.push({
           id: note.id,
           title: note.title

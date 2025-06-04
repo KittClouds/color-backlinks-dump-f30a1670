@@ -130,7 +130,7 @@ export const noteTriplesMap$ = computed((get) => {
 export const activeNoteConnections$ = computed((get) => {
   const activeNote = get(activeNote$);
   if (!activeNote || !activeNote.content) {
-    return { tags: [], mentions: [], links: [], entities: [], triples: [] };
+    return { tags: [], mentions: [], links: [], backlinks: [], entities: [], triples: [] };
   }
 
   // Use document-based parsing for canonical data
@@ -141,6 +141,7 @@ export const activeNoteConnections$ = computed((get) => {
     tags: connections.tags,
     mentions: connections.mentions,
     links: connections.links,
+    backlinks: connections.backlinks,
     entities: connections.entities,
     triples: connections.triples
   };

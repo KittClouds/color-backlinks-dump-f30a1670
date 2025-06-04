@@ -11,6 +11,8 @@ export const DEFAULT_ENTITY_COLORS = {
   SCENE: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
   NPC: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
   POWER: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
+  // Add backlinks as a special type
+  BACKLINK: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
   // Fallback for unknown kinds
   DEFAULT: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30'
 } as const;
@@ -37,7 +39,7 @@ export function getEntityColor(kind: string, userPreferences: Record<string, str
   return DEFAULT_ENTITY_COLORS.DEFAULT;
 }
 
-// Get all known entity kinds
+// Get all known entity kinds including backlinks
 export function getKnownEntityKinds(): string[] {
   return Object.keys(DEFAULT_ENTITY_COLORS).filter(kind => kind !== 'DEFAULT');
 }

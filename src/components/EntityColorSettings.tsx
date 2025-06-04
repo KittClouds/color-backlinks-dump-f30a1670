@@ -31,6 +31,18 @@ export function EntityColorSettings() {
     });
   };
 
+  // Custom display names for special types
+  const getDisplayName = (kind: string) => {
+    if (kind === 'BACKLINK') return 'Backlinks';
+    return kind;
+  };
+
+  // Custom preview for backlinks
+  const getPreviewContent = (kind: string) => {
+    if (kind === 'BACKLINK') return '<<Example>>';
+    return kind;
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -38,7 +50,7 @@ export function EntityColorSettings() {
           <div>
             <CardTitle>Entity Colors</CardTitle>
             <CardDescription>
-              Customize the visual appearance of different entity types
+              Customize the visual appearance of different entity types and backlinks
             </CardDescription>
           </div>
           <Button 
@@ -61,9 +73,9 @@ export function EntityColorSettings() {
             <div key={kind} className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 flex-1">
                 <Badge className={`${currentColor} min-w-0`}>
-                  {kind}
+                  {getPreviewContent(kind)}
                 </Badge>
-                <span className="text-sm font-medium">{kind}</span>
+                <span className="text-sm font-medium">{getDisplayName(kind)}</span>
               </div>
               
               <div className="flex items-center gap-2">
@@ -108,7 +120,7 @@ export function EntityColorSettings() {
               const colorClass = getEntityColor(kind, colorPreferences);
               return (
                 <Badge key={kind} className={`${colorClass} text-xs`}>
-                  {kind}
+                  {getPreviewContent(kind)}
                 </Badge>
               );
             })}

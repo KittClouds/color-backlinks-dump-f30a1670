@@ -14,7 +14,7 @@ export interface KuzuTableInfo {
 }
 
 /**
- * Kuzu Schema Manager - Handles DDL operations and schema evolution
+ * Kuzu Schema Manager - Updated to use schema functions for vector operations
  */
 export class KuzuSchemaManager {
   private conn: any;
@@ -223,7 +223,7 @@ export class KuzuSchemaManager {
   }
 
   /**
-   * Initialize vector support with the new vector manager
+   * Initialize vector support with schema functions
    */
   private async initializeVectorSupport(): Promise<void> {
     try {
@@ -232,10 +232,10 @@ export class KuzuSchemaManager {
       // Add embedding columns to all tables
       await this.vectorManager.addEmbeddingColumns();
       
-      // Create vector indices
+      // Create vector indices using new schema function approach
       await this.vectorManager.createVectorIndices();
       
-      console.log('KuzuSchemaManager: Vector support initialized');
+      console.log('KuzuSchemaManager: Vector support initialized with schema functions');
     } catch (error) {
       console.warn('KuzuSchemaManager: Vector support initialization failed:', error);
     }
@@ -331,13 +331,13 @@ export class KuzuSchemaManager {
   }
 
   /**
-   * Add vector extension support (enhanced)
+   * Add vector extension support using schema functions
    */
   async enableVectorExtension(): Promise<void> {
     if (this.vectorManager) {
       await this.vectorManager.addEmbeddingColumns();
       await this.vectorManager.createVectorIndices();
-      console.log('KuzuSchemaManager: Vector extension enabled');
+      console.log('KuzuSchemaManager: Vector extension enabled with schema functions');
     } else {
       await this.initializeVectorSupport();
     }

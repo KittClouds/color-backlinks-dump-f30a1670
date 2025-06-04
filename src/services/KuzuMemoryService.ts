@@ -36,12 +36,13 @@ export interface ContextualMemoryOptions {
 }
 
 /**
- * Unified memory service for both Notes-as-memory and Thread-based chat memory
+ * Unified memory service with mutex-guarded embedding model initialization
  * Provides semantic search and contextual memory retrieval
  */
 export class KuzuMemoryService {
   private vectorManager: KuzuVectorManager | null = null;
   private embeddingModel: any = null;
+  private embeddingModelPromise: Promise<any> | null = null; // Mutex-guard singleton
 
   constructor() {
     // Vector manager will be initialized when needed
@@ -68,20 +69,26 @@ export class KuzuMemoryService {
   }
 
   /**
-   * Generate embedding for text content using Transformers.js
+   * Generate embedding with mutex-guarded model initialization
    */
   private async generateEmbedding(text: string): Promise<number[]> {
     try {
+      // Mutex-guard: ensure only one model initialization at a time
       if (!this.embeddingModel) {
-        console.log('KuzuMemoryService: Initializing embedding model...');
-        this.embeddingModel = await pipeline(
-          'feature-extraction',
-          'nomic-ai/modernbert-embed-base',
-          { 
-            device: 'webgpu',
-            dtype: 'fp32'
-          }
-        );
+        if (!this.embeddingModelPromise) {
+          console.log('KuzuMemoryService: Starting embedding model initialization...');
+          this.embeddingModelPromise = pipeline(
+            'feature-extraction',
+            'nomic-ai/modernbert-embed-base',
+            { 
+              device: 'webgpu',
+              dtype: 'fp32'
+            }
+          );
+        }
+        
+        // Await the singleton promise - concurrent calls will wait for the same initialization
+        this.embeddingModel = await this.embeddingModelPromise;
         console.log('KuzuMemoryService: Embedding model initialized');
       }
 
@@ -101,6 +108,10 @@ export class KuzuMemoryService {
       return embeddingArray;
     } catch (error) {
       console.error('KuzuMemoryService: Failed to generate embedding:', error);
+      // Reset the promise so next call can retry
+      this.embeddingModelPromise = null;
+      this.embeddingModel = null;
+      
       // Fallback to dummy embedding if model fails
       console.warn('KuzuMemoryService: Using fallback dummy embedding');
       return new Array(768).fill(0).map(() => Math.random());

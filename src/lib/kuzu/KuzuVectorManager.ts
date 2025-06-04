@@ -1,4 +1,3 @@
-
 import { KuzuConnection } from './KuzuTypes';
 import { 
   VectorIndexConfig, 
@@ -12,18 +11,17 @@ import {
 
 /**
  * Manages vector indices and embeddings for Kuzu database
- * Handles the critical index immutability requirement with enhanced memory optimization
- * Features shadow indexing for zero-downtime rebuilds and versioned physical indices
+ * Updated to use schema functions for vector DDL operations
  */
 export class KuzuVectorManager {
   private conn: KuzuConnection;
-  private managedIndices: Map<string, ManagedIndexInternalState>; // Key: logicalName
+  private managedIndices: Map<string, ManagedIndexInternalState>;
   private readonly defaultHNSWParams: Required<HNSWParameters> = {
     M: 16,
     efConstruction: 200,
     metric: 'cosine',
-    mu: 32, // Example default, verify Kuzu support
-    pu: 0.05,  // Example default, verify Kuzu support
+    mu: 32,
+    pu: 0.05,
   };
   
   private readonly vectorConfigs: VectorIndexConfig[] = [
@@ -114,7 +112,7 @@ export class KuzuVectorManager {
   }
 
   /**
-   * Creates a specific physical HNSW index in Kuzu.
+   * Creates a specific physical HNSW index using schema functions
    */
   private async createPhysicalIndex(
     tableName: string,
@@ -124,21 +122,16 @@ export class KuzuVectorManager {
   ): Promise<void> {
     const params: Required<HNSWParameters> = { ...this.defaultHNSWParams, ...parameters };
 
-    const paramStrings: string[] = [];
-    if (params.M !== undefined) paramStrings.push(`M=${params.M}`);
-    if (params.efConstruction !== undefined) paramStrings.push(`efConstruction=${params.efConstruction}`);
-    if (params.metric !== undefined) paramStrings.push(`metric='${params.metric}'`);
-
-    const ddlParameters = paramStrings.length > 0 ? `PARAMETERS (${paramStrings.join(', ')})` : '';
-    const createQuery = `
-      CREATE INDEX IF NOT EXISTS ${physicalIndexName} ON ${tableName}(${columnName})
-      USING HNSW ${ddlParameters}
-    `;
-
     try {
-      const result = await this.conn.query(createQuery);
+      const result = await this.conn.query(`
+        CALL CREATE_VECTOR_INDEX('${tableName}', '${physicalIndexName}', '${columnName}', 
+          metric := '${params.metric}', 
+          efc := ${params.efConstruction},
+          M := ${params.M}
+        )
+      `);
       await result.close();
-      console.log(`KuzuVectorManager: Physical index ${physicalIndexName} on ${tableName}(${columnName}) created with params: ${paramStrings.join(', ') || 'defaults'}.`);
+      console.log(`KuzuVectorManager: Physical index ${physicalIndexName} on ${tableName}(${columnName}) created using schema function.`);
     } catch (error) {
       console.error(`KuzuVectorManager: Failed to create physical index ${physicalIndexName}:`, error);
       throw error;
@@ -146,15 +139,30 @@ export class KuzuVectorManager {
   }
 
   /**
-   * Drops a specific physical HNSW index from Kuzu.
+   * Drops a specific physical HNSW index using schema functions
    */
   private async dropPhysicalIndex(physicalIndexName: string): Promise<void> {
     if (!physicalIndexName) return;
     
     try {
-      const result = await this.conn.query(`DROP INDEX IF EXISTS ${physicalIndexName}`);
-      await result.close();
-      console.log(`KuzuVectorManager: Physical index ${physicalIndexName} dropped.`);
+      // Extract table name from managed indices for DROP_VECTOR_INDEX call
+      let tableName = '';
+      for (const state of this.managedIndices.values()) {
+        if (state.activePhysicalName === physicalIndexName) {
+          tableName = state.tableName;
+          break;
+        }
+      }
+      
+      if (tableName) {
+        const result = await this.conn.query(`
+          CALL DROP_VECTOR_INDEX('${tableName}', '${physicalIndexName}')
+        `);
+        await result.close();
+        console.log(`KuzuVectorManager: Physical index ${physicalIndexName} dropped using schema function.`);
+      } else {
+        console.warn(`KuzuVectorManager: Could not determine table for index ${physicalIndexName}, skipping drop.`);
+      }
     } catch (error) {
       console.warn(`KuzuVectorManager: Failed to drop physical index ${physicalIndexName}:`, error);
     }
@@ -367,99 +375,52 @@ export class KuzuVectorManager {
   }
 
   /**
-   * Create a single HNSW vector index with enhanced parameterization
+   * Create a single HNSW vector index using schema functions
    */
   async createVectorIndex(config: VectorIndexConfig): Promise<void> {
     const { tableName, indexName, columnName } = config;
-    // Merge provided params with manager defaults
     const params: Required<HNSWParameters> = { ...this.defaultHNSWParams, ...config.parameters };
 
-    const paramStrings: string[] = [];
-    // Only include parameters that Kuzu's DDL supports
-    if (params.M !== undefined) paramStrings.push(`M=${params.M}`);
-    if (params.efConstruction !== undefined) paramStrings.push(`efConstruction=${params.efConstruction}`);
-    if (params.metric !== undefined) paramStrings.push(`metric='${params.metric}'`);
-    // Note: mu and pu parameters may not be supported by Kuzu yet
-    // if (params.mu !== undefined) paramStrings.push(`mu=${params.mu}`);
-    // if (params.pu !== undefined) paramStrings.push(`pu=${params.pu}`);
-
-    const ddlParameters = paramStrings.length > 0 ? `PARAMETERS (${paramStrings.join(', ')})` : '';
-    const createIndexQuery = `
-      CREATE INDEX IF NOT EXISTS ${indexName} ON ${tableName}(${columnName})
-      USING HNSW ${ddlParameters}
-    `;
-
     try {
-      const result = await this.conn.query(createIndexQuery);
+      const result = await this.conn.query(`
+        CALL CREATE_VECTOR_INDEX('${tableName}', '${indexName}', '${columnName}', 
+          metric := '${params.metric}', 
+          efc := ${params.efConstruction},
+          M := ${params.M}
+        )
+      `);
       await result.close();
-      console.log(`KuzuVectorManager: Index ${indexName} on ${tableName} created/verified with params: ${paramStrings.join(', ') || 'Kuzu defaults'}.`);
+      console.log(`KuzuVectorManager: Index ${indexName} on ${tableName} created using schema function.`);
     } catch (error) {
-      console.error(`KuzuVectorManager: Failed to create index ${indexName} on ${tableName}. Query: [${createIndexQuery.trim()}]`, error);
+      console.error(`KuzuVectorManager: Failed to create index ${indexName} on ${tableName}:`, error);
       throw error;
     }
   }
 
   /**
-   * Drop and recreate vector indices (handles immutability requirement)
+   * Drop and recreate vector indices using schema functions
    */
   async rebuildVectorIndexes(tableNames?: string[]): Promise<void> {
     const configsToRebuild = tableNames 
-      ? this.vectorConfigs.filter(c => tableNames.includes(c.tableName))
+      ? this.vectorConfigs.filter(config => tableNames.includes(config.tableName))
       : this.vectorConfigs;
-
-    console.log(`KuzuVectorManager: Rebuilding ${configsToRebuild.length} vector indices...`);
 
     for (const config of configsToRebuild) {
       try {
-        // Drop existing index
-        await this.dropVectorIndex(config.indexName);
-        
-        // Recreate index
-        await this.createVectorIndex(config);
-        
-        console.log(`KuzuVectorManager: Rebuilt index ${config.indexName}`);
+        // Drop existing index using schema function
+        await this.conn.query(`
+          CALL DROP_VECTOR_INDEX('${config.tableName}', '${config.indexName}')
+        `);
+        console.log(`KuzuVectorManager: Dropped index ${config.indexName} on ${config.tableName}`);
       } catch (error) {
-        console.error(`KuzuVectorManager: Failed to rebuild index ${config.indexName}:`, error);
+        console.warn(`KuzuVectorManager: Index ${config.indexName} may not exist, continuing with creation:`, error);
       }
+
+      // Recreate index using schema function
+      await this.createVectorIndex(config);
     }
-  }
 
-  /**
-   * Rebuilds specified (or all) vector indices asynchronously.
-   * For each index, it drops and then recreates it.
-   * The rebuilding process for different indices is attempted in parallel.
-   */
-  async rebuildVectorIndexesOptimized(tableNames?: string[]): Promise<void> {
-    const configsToRebuild = tableNames
-      ? this.vectorConfigs.filter(c => tableNames.includes(c.tableName))
-      : this.vectorConfigs;
-
-    console.log(`KuzuVectorManager: Rebuilding ${configsToRebuild.length} vector indices (optimized)...`);
-
-    const rebuildPromises = configsToRebuild.map(config =>
-      (async () => {
-        try {
-          await this.dropVectorIndex(config.indexName);
-          await this.createVectorIndex(config);
-          console.log(`KuzuVectorManager: Successfully rebuilt index ${config.indexName} via optimized path.`);
-          return { success: true, config };
-        } catch (error) {
-          console.error(`KuzuVectorManager: Failed to rebuild index ${config.indexName} via optimized path:`, error.message);
-          return { success: false, config, error: error.message };
-        }
-      })()
-    );
-
-    const results = await Promise.allSettled(rebuildPromises);
-    const allSucceeded = results.every(r => 
-      r.status === 'fulfilled' && r.value?.success !== false
-    );
-    
-    if (!allSucceeded) {
-      console.warn("KuzuVectorManager: One or more index rebuild tasks failed during optimized batch rebuild.");
-    } else {
-      console.log("KuzuVectorManager: All optimized index rebuild tasks completed.");
-    }
+    console.log(`KuzuVectorManager: Rebuilt ${configsToRebuild.length} vector indices using schema functions`);
   }
 
   /**

@@ -1,3 +1,4 @@
+
 import { useStore } from '@livestore/react';
 import { 
   activeNoteId$, 
@@ -192,6 +193,8 @@ export function useNoteActions() {
   const { store } = useStore();
   
   const updateNote = (id: string, updates: any) => {
+    console.log(`[useNoteActions] updateNote called for ${id}:`, updates);
+    
     // If content is being updated, also update outgoing links
     if (updates.content) {
       const allNotes = store.query(notes$);
@@ -202,11 +205,14 @@ export function useNoteActions() {
         const updatedNote = { ...currentNote, content: updates.content };
         const outgoingLinks = parseAndResolveNoteLinks(updatedNote, Array.isArray(allNotes) ? allNotes : []);
         
-        console.log(`Updating outgoing links for note ${id}:`, outgoingLinks);
+        console.log(`[useNoteActions] Parsed outgoing links for note ${id}:`, outgoingLinks);
         updates.outgoingLinks = outgoingLinks;
+      } else {
+        console.warn(`[useNoteActions] Could not find note ${id} for link parsing`);
       }
     }
     
+    console.log(`[useNoteActions] Committing note update for ${id} with outgoingLinks:`, updates.outgoingLinks);
     store.commit(events.noteUpdated({
       id,
       updates,
@@ -294,6 +300,33 @@ export function useNoteActions() {
     });
   };
 
+  // NEW: Function to force re-parse outgoing links for all notes (debug/repair utility)
+  const repairAllOutgoingLinks = () => {
+    const allNotes = store.query(notes$);
+    if (!Array.isArray(allNotes)) return;
+    
+    console.log('[useNoteActions] Repairing outgoing links for all notes...');
+    
+    allNotes.forEach(note => {
+      if (note.type === 'note' && note.content) {
+        const outgoingLinks = parseAndResolveNoteLinks(note, allNotes);
+        
+        // Only update if outgoingLinks are different or missing
+        const currentLinks = note.outgoingLinks || [];
+        const linksChanged = JSON.stringify(currentLinks) !== JSON.stringify(outgoingLinks);
+        
+        if (linksChanged) {
+          console.log(`[useNoteActions] Repairing links for note ${note.id}:`, outgoingLinks);
+          store.commit(events.noteUpdated({
+            id: note.id,
+            updates: { outgoingLinks },
+            updatedAt: new Date().toISOString()
+          }));
+        }
+      }
+    });
+  };
+
   return { 
     updateNote, 
     createNote, 
@@ -301,7 +334,8 @@ export function useNoteActions() {
     createCluster,
     updateCluster,
     deleteCluster,
-    updateNoteTitle // NEW: Export the title update function
+    updateNoteTitle,
+    repairAllOutgoingLinks // NEW: Export the repair function
   };
 }
 

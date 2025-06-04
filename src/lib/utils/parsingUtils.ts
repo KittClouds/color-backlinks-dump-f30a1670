@@ -1,4 +1,3 @@
-
 import { Block, InlineContent } from '@blocknote/core';
 import { Note } from '../store'; // Use Note instead of NoteId
 
@@ -7,7 +6,7 @@ const TAG_REGEX = /#([a-zA-Z0-9_]+)/g;
 const MENTION_REGEX = /@([a-zA-Z0-9_]+)/g;
 // Updated regex to handle potential spaces but capture the core title
 const LINK_REGEX = /\[\[\s*([^\]\s|][^\]|]*?)\s*(?:\|[^\]]*)?\]\]/g; // Capture from `[[Title]]` or `[[Title|Alias]]`
-// NEW: Backlink regex for <<title>> syntax
+// FIXED: Backlink regex for <<title>> syntax - THESE ARE DISPLAY-ONLY, NOT OUTGOING LINKS
 const BACKLINK_REGEX = /<<\s*([^>\s|][^>|]*?)\s*(?:\|[^>]*)?>>/g; // Capture from `<<Title>>` or `<<Title|Alias>>`
 
 // New regex patterns for entities and triples
@@ -36,11 +35,11 @@ export interface NoteLink {
 export interface ParsedConnections {
   tags: string[];
   mentions: string[];
-  links: string[]; // Stores forward link titles from [[title]]
-  backlinks: string[]; // NEW: Stores backlink titles from <<title>>
+  links: string[]; // Stores forward link titles from [[title]] - THESE CREATE OUTGOING LINKS
+  backlinks: string[]; // FIXED: Stores backlink titles from <<title>> - THESE ARE DISPLAY-ONLY
   entities: Entity[];
   triples: Triple[];
-  outgoingLinks: NoteLink[]; // NEW: For LiveStore integration
+  outgoingLinks: NoteLink[]; // FIXED: Only created by [[title]] forward links, NOT by <<title>> backlinks
 }
 
 // Helper to extract text from InlineContent[]
@@ -107,7 +106,7 @@ function promoteMentionsToEntities(mentions: string[]): Entity[] {
   }));
 }
 
-// NEW: Function to resolve link targets against a collection of notes
+// FIXED: Function to resolve link targets against a collection of notes
 export function resolveLinks(outgoingLinks: NoteLink[], allNotes: Note[]): NoteLink[] {
   return outgoingLinks.map(link => {
     // Try to find a note with matching title
@@ -125,10 +124,10 @@ export function parseNoteConnections(blocks: Block[] | undefined): ParsedConnect
     tags: [], 
     mentions: [], 
     links: [], 
-    backlinks: [], // NEW
+    backlinks: [], // FIXED: Display-only backlinks
     entities: [], 
     triples: [],
-    outgoingLinks: [] // NEW
+    outgoingLinks: [] // FIXED: Only from [[title]] forward links
   };
   if (!blocks) return connections;
 
@@ -141,10 +140,12 @@ export function parseNoteConnections(blocks: Block[] | undefined): ParsedConnect
   const uniqueTags = new Set<string>();
   const uniqueMentions = new Set<string>();
   const uniqueLinks = new Set<string>();
-  const uniqueBacklinks = new Set<string>(); // NEW
-  const uniqueOutgoingLinks = new Map<string, NoteLink>(); // NEW: Use Map to deduplicate by targetTitle
+  const uniqueBacklinks = new Set<string>(); // FIXED: Display-only backlinks
+  const uniqueOutgoingLinks = new Map<string, NoteLink>(); // FIXED: Only from forward links
   const uniqueEntities = new Map<string, Entity>(); // Use Map to deduplicate by kind+label
   const triples: Triple[] = [];
+
+  console.log('parseNoteConnections: Parsing text with length:', fullText.length);
 
   // Extract tags
   while ((match = TAG_REGEX.exec(fullText)) !== null) {
@@ -156,25 +157,27 @@ export function parseNoteConnections(blocks: Block[] | undefined): ParsedConnect
      uniqueMentions.add(match[1]);
   }
 
-  // Extract forward links [[title]] and create outgoingLinks
+  // FIXED: Extract forward links [[title]] and create outgoingLinks (navigation)
   while ((match = LINK_REGEX.exec(fullText)) !== null) {
     const linkTitle = match[1].trim(); // Capture group 1 is the title
     if (linkTitle) {
         uniqueLinks.add(linkTitle);
-        // NEW: Create outgoing link entry
+        // Create outgoing link entry for navigation
         uniqueOutgoingLinks.set(linkTitle, {
           targetTitle: linkTitle,
           resolvedTargetId: undefined // Will be resolved later when all notes are available
         });
+        console.log('parseNoteConnections: Found forward link:', linkTitle);
     }
   }
 
-  // NEW: Extract backlinks <<title>> (these are display-only, not outgoing links)
+  // FIXED: Extract backlinks <<title>> (display-only, NO outgoing links created)
   while ((match = BACKLINK_REGEX.exec(fullText)) !== null) {
     const backlinkTitle = match[1].trim();
     if (backlinkTitle) {
         uniqueBacklinks.add(backlinkTitle);
-        // Note: backlinks don't create outgoingLinks, they're for display only
+        console.log('parseNoteConnections: Found backlink (display-only):', backlinkTitle);
+        // IMPORTANT: backlinks don't create outgoingLinks, they're for display only
     }
   }
   
@@ -241,9 +244,11 @@ export function parseNoteConnections(blocks: Block[] | undefined): ParsedConnect
   connections.tags = Array.from(uniqueTags);
   connections.mentions = Array.from(uniqueMentions);
   connections.links = Array.from(uniqueLinks);
-  connections.backlinks = Array.from(uniqueBacklinks); // NEW
-  connections.outgoingLinks = Array.from(uniqueOutgoingLinks.values()); // NEW
+  connections.backlinks = Array.from(uniqueBacklinks); // FIXED: Display-only backlinks
+  connections.outgoingLinks = Array.from(uniqueOutgoingLinks.values()); // FIXED: Only from forward links
   
+  console.log('parseNoteConnections: Final results - links:', connections.links.length, 'backlinks:', connections.backlinks.length, 'outgoingLinks:', connections.outgoingLinks.length);
+
   // Unified entity promotion: combine explicit entities with promoted tags/mentions
   const allEntities = new Map<string, Entity>();
   
@@ -306,7 +311,7 @@ export function parseAllNotes(notes: Note[]): {
   return { tagsMap, mentionsMap, linksMap, entitiesMap, triplesMap };
 }
 
-// NEW: Function specifically for extracting and resolving outgoing links from a note
+// FIXED: Function specifically for extracting and resolving outgoing links from a note
 export function parseAndResolveNoteLinks(note: Note, allNotes: Note[]): NoteLink[] {
   if (note.type !== 'note') return [];
   

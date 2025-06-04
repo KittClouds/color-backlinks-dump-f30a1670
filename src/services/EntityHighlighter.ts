@@ -1,4 +1,3 @@
-
 import { BlockNoteEditor, Block } from '@blocknote/core';
 import { parseNoteConnections } from '@/lib/utils/parsingUtils';
 import { hasRawEntitySyntax } from '@/lib/utils/documentParser';
@@ -37,6 +36,8 @@ export class EntityHighlighter {
         this.isProcessing = false;
         return;
       }
+
+      console.log('EntityHighlighter: Processing block with text:', textContent.substring(0, 100));
 
       // Parse entities from the text (migration layer)
       const connections = parseNoteConnections([block]);
@@ -124,11 +125,12 @@ export class EntityHighlighter {
                 originalSyntax: match[0]
               }
             });
+            console.log('EntityHighlighter: Processing forward link:', link);
           }
         }
       });
 
-      // NEW: Process backlinks <<title>>
+      // Process backlinks <<title>>
       connections.backlinks.forEach(backlink => {
         const backlinkPattern = /<<\s*([^>\s|][^>|]*?)\s*(?:\|[^>]*)?>>/g;
         
@@ -148,6 +150,7 @@ export class EntityHighlighter {
                 originalSyntax: match[0]
               }
             });
+            console.log('EntityHighlighter: Processing backlink (display-only):', backlink);
           }
         }
       });
@@ -202,6 +205,7 @@ export class EntityHighlighter {
 
       // Apply replacements atomically in a single transaction
       if (replacements.length > 0) {
+        console.log('EntityHighlighter: Applying', replacements.length, 'replacements');
         this.applyReplacementsWithCursorPreservation(block, replacements);
       }
 

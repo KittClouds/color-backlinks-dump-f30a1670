@@ -2,7 +2,6 @@
 import { useStore } from '@livestore/react';
 import { notes$, activeNoteId$ } from '../livestore/queries';
 import { computed } from '@livestore/livestore';
-import { parseAndResolveNoteLinks } from '../lib/utils/parsingUtils';
 
 // Hook to get backlinks for a specific note title
 export function useNoteBacklinks(currentNoteTitle: string) {
@@ -16,7 +15,7 @@ export function useNoteBacklinks(currentNoteTitle: string) {
       return [];
     }
     
-    console.log(`[useNoteBacklinks] Computing backlinks for "${currentNoteTitle}"`);
+    console.log(`Computing backlinks for "${currentNoteTitle}"`);
     
     const backlinks: Array<{ id: string; title: string }> = [];
     
@@ -34,24 +33,10 @@ export function useNoteBacklinks(currentNoteTitle: string) {
             title: note.title
           });
         }
-      } else if (note.type === 'note' && note.content) {
-        // FALLBACK: If outgoingLinks are missing, parse them in real-time
-        console.log(`[useNoteBacklinks] Missing outgoingLinks for note ${note.id}, parsing in real-time`);
-        const realTimeLinks = parseAndResolveNoteLinks(note, allNotes);
-        const hasLinkToCurrentNote = realTimeLinks.some(link => 
-          link.targetTitle === currentNoteTitle
-        );
-        
-        if (hasLinkToCurrentNote) {
-          backlinks.push({
-            id: note.id,
-            title: note.title
-          });
-        }
       }
     });
     
-    console.log(`[useNoteBacklinks] Found ${backlinks.length} backlinks for "${currentNoteTitle}"`);
+    console.log(`Found ${backlinks.length} backlinks for "${currentNoteTitle}"`);
     return backlinks;
   }, { label: `backlinks_${currentNoteTitle}` });
   
@@ -73,7 +58,7 @@ export function useActiveNoteBacklinks() {
     const activeNote = allNotes.find(note => note.id === activeNoteId);
     if (!activeNote) return [];
     
-    console.log(`[useActiveNoteBacklinks] Computing backlinks for active note "${activeNote.title}"`);
+    console.log(`Computing backlinks for active note "${activeNote.title}"`);
     
     const backlinks: Array<{ id: string; title: string }> = [];
     
@@ -93,24 +78,10 @@ export function useActiveNoteBacklinks() {
             title: note.title
           });
         }
-      } else if (note.type === 'note' && note.content) {
-        // FALLBACK: If outgoingLinks are missing, parse them in real-time
-        console.log(`[useActiveNoteBacklinks] Missing outgoingLinks for note ${note.id}, parsing in real-time`);
-        const realTimeLinks = parseAndResolveNoteLinks(note, allNotes);
-        const hasLinkToActiveNote = realTimeLinks.some(link => 
-          link.targetTitle === activeNote.title || link.resolvedTargetId === activeNoteId
-        );
-        
-        if (hasLinkToActiveNote) {
-          backlinks.push({
-            id: note.id,
-            title: note.title
-          });
-        }
       }
     });
     
-    console.log(`[useActiveNoteBacklinks] Found ${backlinks.length} backlinks for active note "${activeNote.title}"`);
+    console.log(`Found ${backlinks.length} backlinks for active note "${activeNote.title}"`);
     return backlinks;
   }, { label: 'active_note_backlinks' });
   

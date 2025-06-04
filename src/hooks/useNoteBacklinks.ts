@@ -1,6 +1,6 @@
 
 import { useStore } from '@livestore/react';
-import { notes$ } from '../livestore/queries';
+import { notes$, activeNoteId$ } from '../livestore/queries';
 import { computed } from '@livestore/livestore';
 
 // Hook to get backlinks for a specific note title
@@ -49,20 +49,11 @@ export function useActiveNoteBacklinks() {
   
   const backlinksQuery = computed((get) => {
     const allNotes = get(notes$);
+    const activeNoteId = get(activeNoteId$);
     
-    if (!Array.isArray(allNotes)) {
+    if (!Array.isArray(allNotes) || !activeNoteId) {
       return [];
     }
-    
-    // Get the active note from the notes collection
-    const activeNoteId = get(computed((get) => {
-      const uiStateResults = get(store.query(store.tables.uiState));
-      return Array.isArray(uiStateResults) && uiStateResults.length > 0 
-        ? uiStateResults[0].value?.activeNoteId 
-        : null;
-    }, { label: 'activeNoteId_for_backlinks' }));
-    
-    if (!activeNoteId) return [];
     
     const activeNote = allNotes.find(note => note.id === activeNoteId);
     if (!activeNote) return [];

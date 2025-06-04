@@ -1,4 +1,3 @@
-
 import { events } from './schema';
 import { Store } from '@livestore/livestore';
 
@@ -63,7 +62,8 @@ export function migrateLegacyData(store: Store<any>): boolean {
             updatedAt: note.updatedAt,
             path: note.path || null,
             tags: note.tags || null,
-            mentions: note.mentions || null
+            mentions: note.mentions || null,
+            outgoingLinks: note.outgoingLinks || null // Add the required outgoingLinks property
           }));
           migratedCount++;
         });

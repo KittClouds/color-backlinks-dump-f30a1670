@@ -1,4 +1,3 @@
-
 import cytoscape, { Core, NodeSingular, EdgeSingular, NodeCollection, EdgeCollection, ElementDefinition, SingularElementArgument, Position } from 'cytoscape';
 import undoRedo from 'cytoscape-undo-redo';
 import automove from 'cytoscape-automove';
@@ -8,6 +7,7 @@ import { Entity } from '@/lib/utils/parsingUtils';
 import { GraphDocument } from '@/lib/langchain-lite';
 import { EntityWithReferences } from "@/components/entity-browser/EntityBrowser";
 import { TypedAttribute } from '@/types/attributes';
+import { generateEntityId } from '@/lib/utils/ids';
 
 // Register extensions
 cytoscape.use(undoRedo);
@@ -170,6 +170,50 @@ export class GraphService implements IGraphService {
             'color': '#fff',
             'width': 60,
             'height': 60
+          }
+        },
+        {
+          selector: `node[type = "${NodeType.ENTITY}"][kind = "CHARACTER"]`,
+          style: {
+            'background-color': '#8E24AA'
+          }
+        },
+        {
+          selector: `node[type = "${NodeType.ENTITY}"][kind = "LOCATION"]`,
+          style: {
+            'background-color': '#4CAF50'
+          }
+        },
+        {
+          selector: `node[type = "${NodeType.ENTITY}"][kind = "CONCEPT"]`,
+          style: {
+            'background-color': '#2196F3'
+          }
+        },
+        {
+          selector: `node[type = "${NodeType.ENTITY}"][kind = "MENTION"]`,
+          style: {
+            'background-color': '#FF9800'
+          }
+        },
+        {
+          selector: `edge[type = "${EdgeType.CONTAINS_ENTITY}"]`,
+          style: {
+            'line-color': '#9C27B0',
+            'target-arrow-color': '#9C27B0',
+            'target-arrow-shape': 'triangle',
+            'curve-style': 'bezier',
+            'width': 1
+          }
+        },
+        {
+          selector: `edge[type = "${EdgeType.NOTE_LINK}"]`,
+          style: {
+            'line-color': '#3F51B5',
+            'target-arrow-color': '#3F51B5',
+            'target-arrow-shape': 'triangle',
+            'curve-style': 'bezier',
+            'width': 3
           }
         },
         {
@@ -577,8 +621,8 @@ export class GraphService implements IGraphService {
       tag: this.getConnectionsByType(noteId, EdgeType.HAS_TAG),
       concept: this.getConnectionsByType(noteId, EdgeType.HAS_CONCEPT),
       mention: this.getConnectionsByType(noteId, EdgeType.MENTIONS),
-      entity: this.getConnectionsByType(noteId, EdgeType.MENTIONS),
-      triple: this.getConnectionsByType(noteId, EdgeType.MENTIONS)
+      entity: this.getConnectionsByType(noteId, EdgeType.CONTAINS_ENTITY),
+      triple: this.getConnectionsByType(noteId, EdgeType.SEMANTIC_RELATION)
     };
   }
 
@@ -597,14 +641,35 @@ export class GraphService implements IGraphService {
   /**
    * Update note connections
    */
-  updateNoteConnections(noteId: string, tags: string[], mentions: string[], links: string[], entities: Entity[] = [], triples: Triple[] = []): void {
+  updateNoteConnections(
+    noteId: string, 
+    tags: string[], 
+    mentions: string[], 
+    links: string[], 
+    entities: Entity[] = [], 
+    triples: Triple[] = []
+  ): void {
     const note = this.graph.getElementById(noteId);
-    if (note.empty()) return;
+    if (note.empty()) {
+      console.warn(`Note ${noteId} not found in graph`);
+      return;
+    }
 
-    // Remove existing tag connections
+    console.log(`Updating connections for note ${noteId}:`, {
+      tags: tags.length,
+      mentions: mentions.length,
+      links: links.length,
+      entities: entities.length,
+      triples: triples.length
+    });
+
+    // Remove all existing connections for this note
     this.graph.edges(`[source = "${noteId}"][type = "${EdgeType.HAS_TAG}"]`).remove();
+    this.graph.edges(`[source = "${noteId}"][type = "${EdgeType.MENTIONS}"]`).remove();
+    this.graph.edges(`[source = "${noteId}"][type = "${EdgeType.NOTE_LINK}"]`).remove();
+    this.graph.edges(`[source = "${noteId}"][type = "${EdgeType.CONTAINS_ENTITY}"]`).remove();
 
-    // Add new tag connections
+    // 1. Handle tags (existing logic)
     tags.forEach(tagName => {
       const tag = this.graph.nodes(`[title = "${tagName}"][type = "${NodeType.TAG}"]`);
       if (!tag.empty()) {
@@ -621,10 +686,7 @@ export class GraphService implements IGraphService {
       }
     });
 
-    // Remove existing mention connections
-    this.graph.edges(`[source = "${noteId}"][type = "${EdgeType.MENTIONS}"]`).remove();
-
-    // Add new mention connections
+    // 2. Handle mentions (existing logic)
     mentions.forEach(mentionId => {
       if (noteId === mentionId) return;
       const mention = this.graph.nodes(`[id = "${mentionId}"]`);
@@ -641,25 +703,124 @@ export class GraphService implements IGraphService {
       }
     });
 
-    // Remove existing link connections
-    this.graph.edges(`[source = "${noteId}"][type = "${EdgeType.NOTE_LINK}"]`).remove();
+    // 3. NEW: Handle wiki links [[Note Title]] -> resolve to note IDs
+    const resolvedLinkIds = this.resolveWikiLinksToNoteIds(links);
+    resolvedLinkIds.forEach(linkId => {
+      if (noteId === linkId) return; // Skip self-links
+      
+      this.graph.add({
+        group: 'edges',
+        data: {
+          id: `${noteId}-note_link-${linkId}`,
+          source: noteId,
+          target: linkId,
+          type: EdgeType.NOTE_LINK,
+          linkType: 'wiki_link'
+        }
+      });
+      console.log(`Created wiki link: ${noteId} -> ${linkId}`);
+    });
 
-    // Add new link connections
-    links.forEach(linkId => {
-      if (noteId === linkId) return;
-      const link = this.graph.nodes(`[id = "${linkId}"]`);
-      if (!link.empty()) {
+    // 4. NEW: Handle entities - create entity nodes and connect to note
+    entities.forEach(entity => {
+      const entityNode = this.ensureEntityNode(entity);
+      
+      // Create edge from note to entity
+      const edgeId = `${noteId}-contains_entity-${entityNode.id()}`;
+      if (this.graph.getElementById(edgeId).empty()) {
         this.graph.add({
           group: 'edges',
           data: {
-            id: `${noteId}-note_link-${linkId}`,
+            id: edgeId,
             source: noteId,
-            target: linkId,
-            type: EdgeType.NOTE_LINK
+            target: entityNode.id(),
+            type: EdgeType.CONTAINS_ENTITY,
+            entityKind: entity.kind
           }
         });
+        console.log(`Connected note to entity: ${noteId} -> ${entity.kind}|${entity.label}`);
       }
     });
+
+    // 5. NEW: Handle triples - create relationships between subject and object entities
+    triples.forEach((triple, index) => {
+      const subjectNode = this.ensureEntityNode(triple.subject);
+      const objectNode = this.ensureEntityNode(triple.object);
+      
+      // Create edge between subject and object with predicate as edge type/label
+      const edgeId = `${subjectNode.id()}-${triple.predicate}-${objectNode.id()}-${noteId}-${index}`;
+      
+      this.graph.add({
+        group: 'edges',
+        data: {
+          id: edgeId,
+          source: subjectNode.id(),
+          target: objectNode.id(),
+          type: EdgeType.SEMANTIC_RELATION,
+          predicate: triple.predicate,
+          sourceNoteId: noteId, // Track which note contains this triple
+          label: triple.predicate
+        }
+      });
+      console.log(`Created triple relationship: ${triple.subject.label} -[${triple.predicate}]-> ${triple.object.label}`);
+    });
+
+    console.log(`Finished updating connections for note ${noteId}`);
+  }
+
+  /**
+   * Helper method to resolve wiki link titles to note IDs
+   */
+  private resolveWikiLinksToNoteIds(linkTitles: string[]): string[] {
+    const resolvedIds: string[] = [];
+    
+    linkTitles.forEach(title => {
+      // Find note with matching title
+      const matchingNote = this.graph.nodes(`[type = "${NodeType.NOTE}"]`).filter(node => {
+        const nodeTitle = node.data('title');
+        return nodeTitle && nodeTitle.toLowerCase() === title.toLowerCase();
+      });
+      
+      if (!matchingNote.empty()) {
+        resolvedIds.push(matchingNote.first().id());
+      } else {
+        console.warn(`Wiki link target not found: "${title}"`);
+      }
+    });
+    
+    return resolvedIds;
+  }
+
+  /**
+   * Helper method to ensure entity node exists in graph
+   */
+  private ensureEntityNode(entity: Entity): NodeSingular {
+    const entityId = generateEntityId(entity.kind, entity.label);
+    let entityNode = this.graph.getElementById(entityId);
+    
+    if (entityNode.empty()) {
+      entityNode = this.graph.add({
+        group: 'nodes',
+        data: {
+          id: entityId,
+          type: NodeType.ENTITY,
+          kind: entity.kind,
+          label: entity.label,
+          title: entity.label, // For consistent labeling
+          attributes: entity.attributes || {},
+          createdAt: new Date().toISOString()
+        }
+      }) as NodeSingular;
+      console.log(`Created entity node: ${entity.kind}|${entity.label}`);
+    } else {
+      // Update attributes if provided
+      if (entity.attributes) {
+        const currentAttributes = entityNode.data('attributes') || {};
+        entityNode.data('attributes', { ...currentAttributes, ...entity.attributes });
+      }
+    }
+    
+    return entityNode;
   }
 
   /**

@@ -1,4 +1,3 @@
-
 import { Core, NodeSingular, EdgeSingular, NodeCollection, EdgeCollection, ElementDefinition as CytoscapeElementDefinition, Position, SingularElementArgument } from 'cytoscape';
 import { Note, Cluster } from '@/lib/store';
 import { Entity } from '@/lib/utils/parsingUtils';
@@ -33,30 +32,18 @@ export enum NodeType {
 
 export enum EdgeType {
   CONTAINS = 'contains',
-  NOTE_LINK = 'note_link',
-  HAS_TAG = 'has_tag',
-  MENTIONS = 'mentions',
-  HAS_CONCEPT = 'has_concept',
   IN_CLUSTER = 'in_cluster',
-  LINKS_TO = 'links_to',
   IN_THREAD = 'in_thread',
   REPLIES_TO = 'replies_to',
-  HAS_ATTACHMENT = 'has_attachment',
-  // provenance
-  MENTIONED_IN = 'MENTIONED_IN',
-  // reification links
-  SUBJECT_OF = 'SUBJECT_OF',   // Entity ──SUBJECT_OF──► Triple
-  OBJECT_OF = 'OBJECT_OF',     // Entity ──OBJECT_OF──► Triple
-  // New cross-note relation types
-  CO_OCCURS = 'CO_OCCURS',     // Entity co-occurrence across notes
-  GLOBAL_TRIPLE_MEMBER = 'GLOBAL_TRIPLE_MEMBER', // Entity to global triple
-  // Story-specific relationships
-  PART_OF = 'PART_OF',
-  OCCURS_IN = 'OCCURS_IN',
-  PARTICIPATES_IN = 'PARTICIPATES_IN',
-  OWNS = 'OWNS',
-  PRECEDES = 'PRECEDES',
-  FOLLOWS = 'FOLLOWS'
+  HAS_TAG = 'has_tag',
+  HAS_CONCEPT = 'has_concept',
+  MENTIONS = 'mentions',
+  NOTE_LINK = 'note_link',
+  CO_OCCURS = 'co_occurs',
+  GLOBAL_TRIPLE_MEMBER = 'global_triple_member',
+  // New edge types for parsed elements
+  CONTAINS_ENTITY = 'contains_entity',
+  SEMANTIC_RELATION = 'semantic_relation'
 }
 
 export interface GraphMeta {

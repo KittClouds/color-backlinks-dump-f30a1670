@@ -25,6 +25,13 @@ const WikiLinkInline = ({ inlineContent }: { inlineContent: any }) => (
   </span>
 );
 
+// NEW: Backlink inline component
+const BacklinkInline = ({ inlineContent }: { inlineContent: any }) => (
+  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold border bg-orange-500/20 text-orange-400 border-orange-500/30 cursor-pointer hover:opacity-80 transition-opacity`}>
+    &lt;&lt;{inlineContent.props.text}&gt;&gt;
+  </span>
+);
+
 // Enhanced Entity inline component with kind-based coloring
 const EntityInline = ({ inlineContent }: { inlineContent: any }) => {
   const userPreferences = useAtomValue(entityColorPreferencesAtom);
@@ -110,6 +117,21 @@ export const WikiLinkInlineSpec = createReactInlineContentSpec(
   },
   {
     render: WikiLinkInline
+  }
+);
+
+// NEW: Backlink inline spec
+export const BacklinkInlineSpec = createReactInlineContentSpec(
+  {
+    type: "backlink",
+    propSchema: {
+      text: { default: "" },
+      originalSyntax: { default: "" }
+    },
+    content: "none"
+  },
+  {
+    render: BacklinkInline
   }
 );
 

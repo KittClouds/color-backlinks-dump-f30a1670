@@ -104,7 +104,7 @@ export class EntityHighlighter {
         }
       });
 
-      // Process wiki links
+      // Process forward links [[title]]
       connections.links.forEach(link => {
         const linkPattern = /\[\[\s*([^\]\s|][^\]|]*?)\s*(?:\|[^\]]*)?\]\]/g;
         
@@ -121,6 +121,30 @@ export class EntityHighlighter {
               type: "wikilink",
               props: {
                 text: link,
+                originalSyntax: match[0]
+              }
+            });
+          }
+        }
+      });
+
+      // NEW: Process backlinks <<title>>
+      connections.backlinks.forEach(backlink => {
+        const backlinkPattern = /<<\s*([^>\s|][^>|]*?)\s*(?:\|[^>]*)?>>/g;
+        
+        let match;
+        while ((match = backlinkPattern.exec(textContent)) !== null) {
+          const isPartOfOther = replacements.some(r => 
+            match!.index >= r.from && match!.index + match![0].length <= r.to
+          );
+          
+          if (!isPartOfOther) {
+            replacements.push({
+              from: match.index,
+              to: match.index + match[0].length,
+              type: "backlink",
+              props: {
+                text: backlink,
                 originalSyntax: match[0]
               }
             });

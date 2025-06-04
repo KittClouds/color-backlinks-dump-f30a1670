@@ -7,6 +7,8 @@ const TAG_REGEX = /#([a-zA-Z0-9_]+)/g;
 const MENTION_REGEX = /@([a-zA-Z0-9_]+)/g;
 // Updated regex to handle potential spaces but capture the core title
 const LINK_REGEX = /\[\[\s*([^\]\s|][^\]|]*?)\s*(?:\|[^\]]*)?\]\]/g; // Capture from `[[Title]]` or `[[Title|Alias]]`
+// NEW: Backlink regex for <<title>> syntax
+const BACKLINK_REGEX = /<<\s*([^>\s|][^>|]*?)\s*(?:\|[^>]*)?>>/g; // Capture from `<<Title>>` or `<<Title|Alias>>`
 
 // New regex patterns for entities and triples
 // Updated to potentially capture attributes in JSON format after the label
@@ -34,7 +36,8 @@ export interface NoteLink {
 export interface ParsedConnections {
   tags: string[];
   mentions: string[];
-  links: string[]; // Stores link titles
+  links: string[]; // Stores forward link titles from [[title]]
+  backlinks: string[]; // NEW: Stores backlink titles from <<title>>
   entities: Entity[];
   triples: Triple[];
   outgoingLinks: NoteLink[]; // NEW: For LiveStore integration
@@ -122,6 +125,7 @@ export function parseNoteConnections(blocks: Block[] | undefined): ParsedConnect
     tags: [], 
     mentions: [], 
     links: [], 
+    backlinks: [], // NEW
     entities: [], 
     triples: [],
     outgoingLinks: [] // NEW
@@ -137,6 +141,7 @@ export function parseNoteConnections(blocks: Block[] | undefined): ParsedConnect
   const uniqueTags = new Set<string>();
   const uniqueMentions = new Set<string>();
   const uniqueLinks = new Set<string>();
+  const uniqueBacklinks = new Set<string>(); // NEW
   const uniqueOutgoingLinks = new Map<string, NoteLink>(); // NEW: Use Map to deduplicate by targetTitle
   const uniqueEntities = new Map<string, Entity>(); // Use Map to deduplicate by kind+label
   const triples: Triple[] = [];
@@ -151,7 +156,7 @@ export function parseNoteConnections(blocks: Block[] | undefined): ParsedConnect
      uniqueMentions.add(match[1]);
   }
 
-  // Extract links and create outgoingLinks
+  // Extract forward links [[title]] and create outgoingLinks
   while ((match = LINK_REGEX.exec(fullText)) !== null) {
     const linkTitle = match[1].trim(); // Capture group 1 is the title
     if (linkTitle) {
@@ -161,6 +166,15 @@ export function parseNoteConnections(blocks: Block[] | undefined): ParsedConnect
           targetTitle: linkTitle,
           resolvedTargetId: undefined // Will be resolved later when all notes are available
         });
+    }
+  }
+
+  // NEW: Extract backlinks <<title>> (these are display-only, not outgoing links)
+  while ((match = BACKLINK_REGEX.exec(fullText)) !== null) {
+    const backlinkTitle = match[1].trim();
+    if (backlinkTitle) {
+        uniqueBacklinks.add(backlinkTitle);
+        // Note: backlinks don't create outgoingLinks, they're for display only
     }
   }
   
@@ -227,6 +241,7 @@ export function parseNoteConnections(blocks: Block[] | undefined): ParsedConnect
   connections.tags = Array.from(uniqueTags);
   connections.mentions = Array.from(uniqueMentions);
   connections.links = Array.from(uniqueLinks);
+  connections.backlinks = Array.from(uniqueBacklinks); // NEW
   connections.outgoingLinks = Array.from(uniqueOutgoingLinks.values()); // NEW
   
   // Unified entity promotion: combine explicit entities with promoted tags/mentions

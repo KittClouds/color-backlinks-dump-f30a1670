@@ -1,23 +1,22 @@
 
-import { BlockNoteSchema, defaultInlineContentSpecs } from '@blocknote/core';
+import { BlockNoteSchema } from "@blocknote/core";
 import { 
   TagInlineSpec, 
   MentionInlineSpec, 
   WikiLinkInlineSpec, 
+  BacklinkInlineSpec, // NEW
   EntityInlineSpec, 
   TripleInlineSpec 
-} from '@/components/editor/inline/EntityInlineSpecs';
+} from '../../components/editor/inline/EntityInlineSpecs';
 
-// Create extended schema with custom inline content types
+// Create schema with custom inline content specs for entity highlighting
 export const entityEditorSchema = BlockNoteSchema.create({
   inlineContentSpecs: {
-    ...defaultInlineContentSpecs,
     tag: TagInlineSpec,
     mention: MentionInlineSpec,
     wikilink: WikiLinkInlineSpec,
+    backlink: BacklinkInlineSpec, // NEW
     entity: EntityInlineSpec,
     triple: TripleInlineSpec
   }
 });
-
-export type EntityEditorSchema = typeof entityEditorSchema;

@@ -21,8 +21,8 @@ export function useNoteBacklinks(currentNoteTitle: string) {
     
     // Iterate through all notes to find ones that link to the current note
     allNotes.forEach(note => {
+      // Method 1: Check outgoingLinks (from LiveStore)
       if (note.outgoingLinks && Array.isArray(note.outgoingLinks)) {
-        // Check if this note has any outgoing links to the current note
         const hasLinkToCurrentNote = note.outgoingLinks.some(link => 
           link.targetTitle === currentNoteTitle
         );
@@ -32,6 +32,33 @@ export function useNoteBacklinks(currentNoteTitle: string) {
             id: note.id,
             title: note.title
           });
+          return; // Found via outgoingLinks, no need to check content
+        }
+      }
+      
+      // Method 2: Check raw content for [[title]] syntax (fallback)
+      if (note.content && Array.isArray(note.content)) {
+        const noteText = note.content.map(block => {
+          if (!block.content || !Array.isArray(block.content)) return '';
+          return block.content.map(item => {
+            if (item.type === 'text' && 'text' in item) {
+              return item.text;
+            }
+            return '';
+          }).join('');
+        }).join('\n');
+        
+        // Check for [[currentNoteTitle]] in the raw text
+        const linkPattern = new RegExp(`\\[\\[\\s*${currentNoteTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(?:\\|[^\\]]*)?\\]\\]`, 'g');
+        if (linkPattern.test(noteText)) {
+          // Make sure we don't add duplicates
+          const alreadyAdded = backlinks.some(bl => bl.id === note.id);
+          if (!alreadyAdded) {
+            backlinks.push({
+              id: note.id,
+              title: note.title
+            });
+          }
         }
       }
     });
@@ -66,8 +93,8 @@ export function useActiveNoteBacklinks() {
     allNotes.forEach(note => {
       if (note.id === activeNoteId) return; // Skip self-references
       
+      // Method 1: Check outgoingLinks (from LiveStore)
       if (note.outgoingLinks && Array.isArray(note.outgoingLinks)) {
-        // Check if this note has any outgoing links to the active note
         const hasLinkToActiveNote = note.outgoingLinks.some(link => 
           link.targetTitle === activeNote.title || link.resolvedTargetId === activeNoteId
         );
@@ -77,6 +104,33 @@ export function useActiveNoteBacklinks() {
             id: note.id,
             title: note.title
           });
+          return; // Found via outgoingLinks, no need to check content
+        }
+      }
+      
+      // Method 2: Check raw content for [[activeNote.title]] syntax (fallback)
+      if (note.content && Array.isArray(note.content)) {
+        const noteText = note.content.map(block => {
+          if (!block.content || !Array.isArray(block.content)) return '';
+          return block.content.map(item => {
+            if (item.type === 'text' && 'text' in item) {
+              return item.text;
+            }
+            return '';
+          }).join('');
+        }).join('\n');
+        
+        // Check for [[activeNote.title]] in the raw text
+        const linkPattern = new RegExp(`\\[\\[\\s*${activeNote.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(?:\\|[^\\]]*)?\\]\\]`, 'g');
+        if (linkPattern.test(noteText)) {
+          // Make sure we don't add duplicates
+          const alreadyAdded = backlinks.some(bl => bl.id === note.id);
+          if (!alreadyAdded) {
+            backlinks.push({
+              id: note.id,
+              title: note.title
+            });
+          }
         }
       }
     });

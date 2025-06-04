@@ -31,7 +31,14 @@ export const tables = {
       updatedAt: State.SQLite.text(),
       path: State.SQLite.text({ nullable: true }),
       tags: State.SQLite.json({ schema: Schema.Array(Schema.String), nullable: true }),
-      mentions: State.SQLite.json({ schema: Schema.Array(Schema.String), nullable: true })
+      mentions: State.SQLite.json({ schema: Schema.Array(Schema.String), nullable: true }),
+      outgoingLinks: State.SQLite.json({ 
+        schema: Schema.Array(Schema.Struct({
+          targetTitle: Schema.String,
+          resolvedTargetId: Schema.NullOr(Schema.String)
+        })), 
+        nullable: true 
+      })
     }
   }),
 
@@ -148,7 +155,11 @@ export const events = {
       updatedAt: Schema.String,
       path: Schema.NullOr(Schema.String),
       tags: Schema.NullOr(Schema.Array(Schema.String)),
-      mentions: Schema.NullOr(Schema.Array(Schema.String))
+      mentions: Schema.NullOr(Schema.Array(Schema.String)),
+      outgoingLinks: Schema.NullOr(Schema.Array(Schema.Struct({
+        targetTitle: Schema.String,
+        resolvedTargetId: Schema.NullOr(Schema.String)
+      })))
     })
   }),
 
@@ -257,8 +268,8 @@ const materializers = State.SQLite.materializers(events, {
   'v1.ClusterDeleted': ({ id }) =>
     tables.clusters.delete().where({ id }),
 
-  'v1.NoteCreated': ({ id, parentId, clusterId, title, content, type, createdAt, updatedAt, path, tags, mentions }) =>
-    tables.notes.insert({ id, parentId, clusterId, title, content, type, createdAt, updatedAt, path, tags, mentions }),
+  'v1.NoteCreated': ({ id, parentId, clusterId, title, content, type, createdAt, updatedAt, path, tags, mentions, outgoingLinks }) =>
+    tables.notes.insert({ id, parentId, clusterId, title, content, type, createdAt, updatedAt, path, tags, mentions, outgoingLinks }),
 
   'v1.NoteUpdated': ({ id, updates, updatedAt }) =>
     tables.notes.update({ ...updates, updatedAt }).where({ id }),

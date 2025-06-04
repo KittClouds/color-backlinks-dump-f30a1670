@@ -26,12 +26,18 @@ export interface Triple {
   object: Entity;
 }
 
+export interface NoteLink {
+  targetTitle: string;
+  resolvedTargetId?: string;
+}
+
 export interface ParsedConnections {
   tags: string[];
   mentions: string[];
   links: string[]; // Stores link titles
   entities: Entity[];
   triples: Triple[];
+  outgoingLinks: NoteLink[]; // NEW: For LiveStore integration
 }
 
 // Helper to extract text from InlineContent[]
@@ -98,8 +104,28 @@ function promoteMentionsToEntities(mentions: string[]): Entity[] {
   }));
 }
 
+// NEW: Function to resolve link targets against a collection of notes
+export function resolveLinks(outgoingLinks: NoteLink[], allNotes: Note[]): NoteLink[] {
+  return outgoingLinks.map(link => {
+    // Try to find a note with matching title
+    const targetNote = allNotes.find(note => note.title === link.targetTitle);
+    
+    return {
+      targetTitle: link.targetTitle,
+      resolvedTargetId: targetNote ? targetNote.id : undefined
+    };
+  });
+}
+
 export function parseNoteConnections(blocks: Block[] | undefined): ParsedConnections {
-  const connections: ParsedConnections = { tags: [], mentions: [], links: [], entities: [], triples: [] };
+  const connections: ParsedConnections = { 
+    tags: [], 
+    mentions: [], 
+    links: [], 
+    entities: [], 
+    triples: [],
+    outgoingLinks: [] // NEW
+  };
   if (!blocks) return connections;
 
   let fullText = '';
@@ -111,6 +137,7 @@ export function parseNoteConnections(blocks: Block[] | undefined): ParsedConnect
   const uniqueTags = new Set<string>();
   const uniqueMentions = new Set<string>();
   const uniqueLinks = new Set<string>();
+  const uniqueOutgoingLinks = new Map<string, NoteLink>(); // NEW: Use Map to deduplicate by targetTitle
   const uniqueEntities = new Map<string, Entity>(); // Use Map to deduplicate by kind+label
   const triples: Triple[] = [];
 
@@ -124,11 +151,16 @@ export function parseNoteConnections(blocks: Block[] | undefined): ParsedConnect
      uniqueMentions.add(match[1]);
   }
 
-  // Extract links
+  // Extract links and create outgoingLinks
   while ((match = LINK_REGEX.exec(fullText)) !== null) {
     const linkTitle = match[1].trim(); // Capture group 1 is the title
     if (linkTitle) {
         uniqueLinks.add(linkTitle);
+        // NEW: Create outgoing link entry
+        uniqueOutgoingLinks.set(linkTitle, {
+          targetTitle: linkTitle,
+          resolvedTargetId: undefined // Will be resolved later when all notes are available
+        });
     }
   }
   
@@ -195,6 +227,7 @@ export function parseNoteConnections(blocks: Block[] | undefined): ParsedConnect
   connections.tags = Array.from(uniqueTags);
   connections.mentions = Array.from(uniqueMentions);
   connections.links = Array.from(uniqueLinks);
+  connections.outgoingLinks = Array.from(uniqueOutgoingLinks.values()); // NEW
   
   // Unified entity promotion: combine explicit entities with promoted tags/mentions
   const allEntities = new Map<string, Entity>();
@@ -256,4 +289,12 @@ export function parseAllNotes(notes: Note[]): {
   });
 
   return { tagsMap, mentionsMap, linksMap, entitiesMap, triplesMap };
+}
+
+// NEW: Function specifically for extracting and resolving outgoing links from a note
+export function parseAndResolveNoteLinks(note: Note, allNotes: Note[]): NoteLink[] {
+  if (note.type !== 'note') return [];
+  
+  const { outgoingLinks } = parseNoteConnections(note.content);
+  return resolveLinks(outgoingLinks, allNotes);
 }

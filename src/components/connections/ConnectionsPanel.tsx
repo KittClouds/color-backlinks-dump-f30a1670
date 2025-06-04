@@ -1,5 +1,6 @@
+
 import { useActiveNote, useActiveNoteConnections } from '@/hooks/useLiveStore';
-import { useGraph } from '@/contexts/GraphContext'; // Keep for backlinks
+import { useActiveNoteBacklinks } from '@/hooks/useNoteBacklinks'; // NEW: Use dedicated backlinks hook
 import { Badge } from '@/components/ui/badge';
 import { Link, ChevronDown, ChevronUp, Hash, AtSign, Database, Network } from 'lucide-react';
 import { useState } from 'react';
@@ -15,14 +16,13 @@ import { useEntitiesForScope } from "@/hooks/useEntitiesForScope";
 export function ConnectionsPanel() {
   const activeNote = useActiveNote();
   const connections = useActiveNoteConnections();
-  const { getBacklinks } = useGraph(); // Only need backlinks from graph context now
+  const backlinks = useActiveNoteBacklinks(); // NEW: Use reactive backlinks hook
   const [isOpen, setIsOpen] = useState(false);
   const [activeView, setActiveView] = useState<'links' | 'backlinks' | 'entities' | 'related'>('entities'); // Default to entities
   
   // Use the new scope-aware entity hook
   const entitiesScope = useEntitiesForScope();
   
-  const backlinks = activeNote?.id ? getBacklinks(activeNote.id) : [];
   const { tags = [], mentions = [], links = [] } = connections;
 
   return (
@@ -62,7 +62,7 @@ export function ConnectionsPanel() {
                   className={`px-4 ${activeView === 'backlinks' ? 'bg-[#1a1b23] text-primary' : 'text-muted-foreground'}`}
                 >
                   <Link className="mr-2 h-4 w-4 transform rotate-180" />
-                  Backlinks
+                  Backlinks ({backlinks.length})
                 </Button>
                 <Button
                   variant="ghost"
@@ -171,7 +171,7 @@ export function ConnectionsPanel() {
                   <CardContent className="p-4">
                     <h3 className="flex items-center text-sm font-medium mb-3 text-primary">
                       <Link className="h-4 w-4 mr-2 transform rotate-180" /> 
-                      Backlinks
+                      Backlinks ({backlinks.length})
                     </h3>
                     <div className="space-y-2">
                       {backlinks.length > 0 ? (
@@ -180,6 +180,7 @@ export function ConnectionsPanel() {
                             <div
                               key={link.id}
                               className="text-sm px-2 py-1 rounded-md bg-[#1a1b23] hover:bg-[#22242f] cursor-pointer transition-colors flex items-center"
+                              title={`Note: ${link.title}`}
                             >
                               [[{link.title}]]
                             </div>

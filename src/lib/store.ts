@@ -1,10 +1,9 @@
-
 // LiveStore-based state management
 // This file now exports LiveStore queries and utilities instead of Jotai atoms
 
 import { generateClusterId, generateNoteId, generateNodeId, TripleId, NoteId, ClusterId } from './utils/ids';
 import { createParagraphBlock } from './utils/blockUtils';
-import { Entity, Triple as ParsedTriple } from './utils/parsingUtils'; 
+import { Entity, Triple as ParsedTriple, NoteLink } from './utils/parsingUtils'; // NEW: Import NoteLink
 import { Thread, ThreadMessage, ChatRole } from '../services/types';
 import { SchemaDefinitions } from './schema';
 import { EntityBlueprint, BlueprintStorage } from '@/types/blueprints';
@@ -36,6 +35,7 @@ export interface Note {
   concepts?: Array<{ type: string, name: string }>;
   entities?: Entity[];
   triples?: Triple[];
+  outgoingLinks?: NoteLink[]; // NEW: Add outgoingLinks property
 }
 
 export interface Triple {
@@ -45,7 +45,7 @@ export interface Triple {
   object: Entity;
 }
 
-export type { NoteId, ClusterId, TripleId };
+export type { NoteId, ClusterId, TripleId, NoteLink }; // NEW: Export NoteLink type
 
 // Re-export LiveStore queries and events
 export { 
@@ -88,7 +88,8 @@ export function createNote(parentId: string | null = null, clusterId: string | n
     updatedAt: now,
     parentId: parentId as NoteId | null,
     type: 'note',
-    clusterId: clusterId as ClusterId | null
+    clusterId: clusterId as ClusterId | null,
+    outgoingLinks: [] // NEW: Initialize with empty outgoingLinks
   };
   
   return { id: newId, note: newNote };
@@ -106,7 +107,8 @@ export function createFolder(parentId: string | null = null, clusterId: string |
     updatedAt: now,
     parentId: parentId as NoteId | null,
     type: 'folder',
-    clusterId: clusterId as ClusterId | null
+    clusterId: clusterId as ClusterId | null,
+    outgoingLinks: [] // NEW: Initialize with empty outgoingLinks
   };
   
   return { id: newId, note: newFolder };
@@ -132,7 +134,8 @@ export function createCluster(title: string) {
     updatedAt: now,
     parentId: null,
     type: 'folder',
-    clusterId: newId
+    clusterId: newId,
+    outgoingLinks: [] // NEW: Initialize with empty outgoingLinks
   };
   
   return { 

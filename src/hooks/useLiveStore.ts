@@ -31,6 +31,7 @@ import {
   topGlobalTriples$
 } from '../livestore/queries/derived';
 import { events } from '../livestore/schema';
+import { parseAndResolveNoteLinks } from '../lib/utils/parsingUtils';
 
 // Custom hooks that wrap LiveStore usage with proper typing
 export function useActiveNoteId() {
@@ -186,11 +187,26 @@ export function useTopGlobalTriples() {
   return store.useQuery(topGlobalTriples$);
 }
 
-// Helper to commit note updates
+// Helper to commit note updates with enhanced link handling
 export function useNoteActions() {
   const { store } = useStore();
   
   const updateNote = (id: string, updates: any) => {
+    // If content is being updated, also update outgoing links
+    if (updates.content) {
+      const allNotes = store.query(notes$);
+      const currentNote = Array.isArray(allNotes) ? allNotes.find(note => note.id === id) : null;
+      
+      if (currentNote) {
+        // Create a temporary note object with updated content for parsing
+        const updatedNote = { ...currentNote, content: updates.content };
+        const outgoingLinks = parseAndResolveNoteLinks(updatedNote, Array.isArray(allNotes) ? allNotes : []);
+        
+        console.log(`Updating outgoing links for note ${id}:`, outgoingLinks);
+        updates.outgoingLinks = outgoingLinks;
+      }
+    }
+    
     store.commit(events.noteUpdated({
       id,
       updates,
@@ -199,6 +215,15 @@ export function useNoteActions() {
   };
 
   const createNote = (note: any) => {
+    // Ensure outgoing links are parsed and resolved for new notes
+    if (note.content) {
+      const allNotes = store.query(notes$);
+      const outgoingLinks = parseAndResolveNoteLinks(note, Array.isArray(allNotes) ? allNotes : []);
+      note.outgoingLinks = outgoingLinks;
+      
+      console.log(`Creating note with outgoing links:`, outgoingLinks);
+    }
+    
     store.commit(events.noteCreated(note));
   };
 
@@ -222,13 +247,61 @@ export function useNoteActions() {
     store.commit(events.clusterDeleted({ id }));
   };
 
+  // NEW: Function to handle note title changes and update all affected links
+  const updateNoteTitle = (id: string, newTitle: string) => {
+    const allNotes = store.query(notes$);
+    if (!Array.isArray(allNotes)) return;
+    
+    const targetNote = allNotes.find(note => note.id === id);
+    if (!targetNote) return;
+    
+    const oldTitle = targetNote.title;
+    console.log(`Updating note title from "${oldTitle}" to "${newTitle}"`);
+    
+    // First update the note's title
+    store.commit(events.noteUpdated({
+      id,
+      updates: { title: newTitle },
+      updatedAt: new Date().toISOString()
+    }));
+    
+    // Then update all notes that link to this note
+    allNotes.forEach(note => {
+      if (note.id === id) return; // Skip the note being renamed
+      
+      if (note.outgoingLinks && Array.isArray(note.outgoingLinks)) {
+        let linksUpdated = false;
+        const updatedLinks = note.outgoingLinks.map(link => {
+          if (link.targetTitle === oldTitle || link.resolvedTargetId === id) {
+            linksUpdated = true;
+            return {
+              targetTitle: newTitle,
+              resolvedTargetId: id
+            };
+          }
+          return link;
+        });
+        
+        if (linksUpdated) {
+          console.log(`Updating links in note ${note.id} due to title change`);
+          store.commit(events.noteUpdated({
+            id: note.id,
+            updates: { outgoingLinks: updatedLinks },
+            updatedAt: new Date().toISOString()
+          }));
+        }
+      }
+    });
+  };
+
   return { 
     updateNote, 
     createNote, 
     deleteNote,
     createCluster,
     updateCluster,
-    deleteCluster
+    deleteCluster,
+    updateNoteTitle // NEW: Export the title update function
   };
 }
 

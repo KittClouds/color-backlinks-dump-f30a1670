@@ -1,4 +1,3 @@
-
 import { useActiveNote, useActiveNoteId, useNotes, useNoteActions } from '@/hooks/useLiveStore';
 import { Input } from "@/components/ui/input";
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -22,7 +21,7 @@ export function NoteEditor() {
   const activeNote = useActiveNote();
   const [activeNoteId, setActiveNoteId] = useActiveNoteId();
   const notes = useNotes();
-  const { updateNote, deleteNote } = useNoteActions();
+  const { updateNote, deleteNote, updateNoteTitle } = useNoteActions(); // NEW: Use enhanced updateNoteTitle
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     if (typeof window !== 'undefined') {
       return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
@@ -114,7 +113,7 @@ export function NoteEditor() {
     const success = await saveNote(activeNote.id, currentBlocks);
     
     if (success) {
-      // Persist to LiveStore
+      // Persist to LiveStore with enhanced link parsing
       updateNote(activeNote.id, { content: currentBlocks });
       
       // Process entity highlighting after save
@@ -293,9 +292,15 @@ export function NoteEditor() {
     }
   }, [getHealthMetrics]);
 
+  // NEW: Enhanced title change handler that maintains link relationships
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (activeNote) {
-      updateNote(activeNote.id, { title: e.target.value });
+      const newTitle = e.target.value;
+      
+      // Use the enhanced updateNoteTitle function instead of updateNote
+      updateNoteTitle(activeNote.id, newTitle);
+      
+      console.log(`Title updated from "${activeNote.title}" to "${newTitle}"`);
     }
   };
 

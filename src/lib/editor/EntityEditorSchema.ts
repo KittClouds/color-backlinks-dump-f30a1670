@@ -1,5 +1,5 @@
 
-import { BlockNoteSchema } from "@blocknote/core";
+import { BlockNoteSchema, defaultInlineContentSpecs } from "@blocknote/core";
 import { 
   TagInlineSpec, 
   MentionInlineSpec, 
@@ -12,6 +12,9 @@ import {
 // Create schema with custom inline content specs for entity highlighting
 export const entityEditorSchema = BlockNoteSchema.create({
   inlineContentSpecs: {
+    // Include default specs
+    ...defaultInlineContentSpecs,
+    // Add our custom specs
     tag: TagInlineSpec,
     mention: MentionInlineSpec,
     wikilink: WikiLinkInlineSpec,

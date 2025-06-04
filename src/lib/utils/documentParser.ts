@@ -6,6 +6,7 @@ export interface DocumentConnections {
   tags: string[];
   mentions: string[];
   links: string[];
+  backlinks: string[]; // Add backlinks to the interface
   entities: Entity[];
   triples: Triple[];
 }
@@ -19,6 +20,7 @@ export function parseNoteConnectionsFromDocument(blocks: Block[]): DocumentConne
     tags: [],
     mentions: [],
     links: [],
+    backlinks: [], // Initialize backlinks array
     entities: [],
     triples: []
   };
@@ -47,6 +49,12 @@ export function parseNoteConnectionsFromDocument(blocks: Block[]): DocumentConne
           case 'wikilink':
             if (inlineItem.props?.text) {
               connections.links.push(inlineItem.props.text);
+            }
+            break;
+
+          case 'backlink':
+            if (inlineItem.props?.text) {
+              connections.backlinks.push(inlineItem.props.text);
             }
             break;
             
@@ -116,6 +124,20 @@ export function parseNoteConnectionsFromDocument(blocks: Block[]): DocumentConne
                 }
               });
             }
+
+            // Extract raw backlinks
+            const backlinkMatches = text.match(/<<\s*([^>\s|][^>|]*?)\s*(?:\|[^>]*)?>>/g);
+            if (backlinkMatches) {
+              backlinkMatches.forEach(match => {
+                const backlinkMatch = match.match(/<<\s*([^>\s|][^>|]*?)\s*(?:\|[^>]*)?>>/);
+                if (backlinkMatch) {
+                  const backlink = backlinkMatch[1].trim();
+                  if (!connections.backlinks.includes(backlink)) {
+                    connections.backlinks.push(backlink);
+                  }
+                }
+              });
+            }
             break;
         }
       }
@@ -133,6 +155,7 @@ export function parseNoteConnectionsFromDocument(blocks: Block[]): DocumentConne
   connections.tags = [...new Set(connections.tags)];
   connections.mentions = [...new Set(connections.mentions)];
   connections.links = [...new Set(connections.links)];
+  connections.backlinks = [...new Set(connections.backlinks)];
   
   return connections;
 }
@@ -151,6 +174,7 @@ export function hasRawEntitySyntax(block: Block): boolean {
       if (
         /\[[\w]+\|[^\]]+\]/.test(text) ||           // Entity syntax
         /\[\[\s*[^\]]+\s*\]\]/.test(text) ||        // Wiki links
+        /<<\s*[^>]+\s*>>/.test(text) ||             // Backlinks
         /#\w+/.test(text) ||                        // Tags
         /@\w+/.test(text) ||                        // Mentions
         /\[[\w]+\|[^\]]+\]\s*\([^)]+\)\s*\[[\w]+\|[^\]]+\]/.test(text) // Triples

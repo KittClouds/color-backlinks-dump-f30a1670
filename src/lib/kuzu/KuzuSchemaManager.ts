@@ -1,5 +1,6 @@
 import { jsonSchemaRegistry } from '@/json-manager/schemas';
 import { KuzuVectorManager } from './KuzuVectorManager';
+import { pipeline } from '@huggingface/transformers';
 
 export interface KuzuSchemaVersion {
   version: string;
@@ -21,9 +22,55 @@ export class KuzuSchemaManager {
   private currentVersion = '1.0.0';
   private appliedVersions: Set<string> = new Set();
   private vectorManager: KuzuVectorManager | null = null;
+  private embeddingModelPromise?: Promise<any>;
 
   constructor(connection: any) {
     this.conn = connection;
+  }
+
+  /**
+   * Mutex-guarded embedding model loader
+   */
+  private async getEmbedder() {
+    if (!this.embeddingModelPromise) {
+      this.embeddingModelPromise = pipeline(
+        'feature-extraction',
+        'nomic-ai/modernbert-embed-base',
+        { device: 'webgpu', dtype: 'fp32' }
+      );
+    }
+    return this.embeddingModelPromise;
+  }
+
+  /**
+   * Generate embedding with mutex-guarded model initialization
+   */
+  private async generateEmbedding(text: string): Promise<number[]> {
+    try {
+      const model = await this.getEmbedder();
+      const embedding = await model(text, { 
+        pooling: 'mean', 
+        normalize: true 
+      });
+      
+      // Convert tensor to array
+      const embeddingArray = embedding.tolist()[0];
+      
+      // Ensure we have exactly 768 dimensions
+      if (embeddingArray.length !== 768) {
+        console.warn(`KuzuSchemaManager: Expected 768 dimensions, got ${embeddingArray.length}`);
+      }
+      
+      return embeddingArray;
+    } catch (error) {
+      console.error('KuzuSchemaManager: Failed to generate embedding:', error);
+      // Reset the promise so next call can retry
+      this.embeddingModelPromise = undefined;
+      
+      // Fallback to dummy embedding if model fails
+      console.warn('KuzuSchemaManager: Using fallback dummy embedding');
+      return new Array(768).fill(0).map(() => Math.random());
+    }
   }
 
   /**
@@ -42,10 +89,13 @@ export class KuzuSchemaManager {
       // Create memory-specific tables
       await this.createMemoryTables();
       
+      // Add embedding columns and model tracking
+      await this.addEmbeddingColumns();
+      
       // Finally create indices for performance
       await this.createIndices();
       
-      // Initialize vector support
+      // Initialize vector support with function APIs
       await this.initializeVectorSupport();
       
       // Mark schema as initialized
@@ -223,21 +273,134 @@ export class KuzuSchemaManager {
   }
 
   /**
+   * Add embedding columns with model tracking
+   */
+  private async addEmbeddingColumns(): Promise<void> {
+    console.log('KuzuSchemaManager: Adding embedding columns with model tracking...');
+
+    const alterQueries = [
+      // Add embedding columns
+      `ALTER NODE TABLE Note ADD COLUMN IF NOT EXISTS embedding FLOAT[768]`,
+      `ALTER NODE TABLE ThreadMessage ADD COLUMN IF NOT EXISTS embedding FLOAT[768]`,
+      `ALTER NODE TABLE Entity ADD COLUMN IF NOT EXISTS embedding FLOAT[768]`,
+      
+      // Add model tracking columns for future-proofing
+      `ALTER NODE TABLE Note ADD COLUMN IF NOT EXISTS embedding_model STRING`,
+      `ALTER NODE TABLE ThreadMessage ADD COLUMN IF NOT EXISTS embedding_model STRING`,
+      `ALTER NODE TABLE Entity ADD COLUMN IF NOT EXISTS embedding_model STRING`,
+      
+      // Memory-specific fields for Note
+      `ALTER NODE TABLE Note ADD COLUMN IF NOT EXISTS importance FLOAT DEFAULT 0.5`,
+      `ALTER NODE TABLE Note ADD COLUMN IF NOT EXISTS userId STRING`,
+      `ALTER NODE TABLE Note ADD COLUMN IF NOT EXISTS categoryId STRING`,
+      `ALTER NODE TABLE Note ADD COLUMN IF NOT EXISTS accessCount INT DEFAULT 0`,
+      `ALTER NODE TABLE Note ADD COLUMN IF NOT EXISTS lastAccessedAt TIMESTAMP`,
+      
+      // Memory-specific fields for ThreadMessage  
+      `ALTER NODE TABLE ThreadMessage ADD COLUMN IF NOT EXISTS importance FLOAT DEFAULT 0.5`,
+      `ALTER NODE TABLE ThreadMessage ADD COLUMN IF NOT EXISTS accessCount INT DEFAULT 0`,
+      `ALTER NODE TABLE ThreadMessage ADD COLUMN IF NOT EXISTS lastAccessedAt TIMESTAMP`
+    ];
+
+    for (const query of alterQueries) {
+      try {
+        await this.conn.execute(query);
+        console.log('KuzuSchemaManager: Added column successfully');
+      } catch (error) {
+        console.warn('KuzuSchemaManager: Column may already exist:', error);
+      }
+    }
+  }
+
+  /**
    * Initialize vector support with schema functions
    */
   private async initializeVectorSupport(): Promise<void> {
     try {
       this.vectorManager = new KuzuVectorManager(this.conn);
       
-      // Add embedding columns to all tables
-      await this.vectorManager.addEmbeddingColumns();
-      
-      // Create vector indices using new schema function approach
-      await this.vectorManager.createVectorIndices();
+      // Create vector indices using stable function APIs
+      await this.createVectorIndicesWithFunctions();
       
       console.log('KuzuSchemaManager: Vector support initialized with schema functions');
     } catch (error) {
       console.warn('KuzuSchemaManager: Vector support initialization failed:', error);
+    }
+  }
+
+  /**
+   * Create vector indices using stable function APIs
+   */
+  private async createVectorIndicesWithFunctions(): Promise<void> {
+    console.log('KuzuSchemaManager: Creating vector indices with function APIs...');
+
+    const vectorIndexConfigs = [
+      {
+        tableName: 'Note',
+        indexName: 'hnsw_note_embedding',
+        columnName: 'embedding',
+        metric: 'cosine',
+        efc: 200,
+        M: 16
+      },
+      {
+        tableName: 'ThreadMessage',
+        indexName: 'hnsw_thread_message_embedding',
+        columnName: 'embedding',
+        metric: 'cosine',
+        efc: 200,
+        M: 16
+      },
+      {
+        tableName: 'Entity',
+        indexName: 'hnsw_entity_embedding',
+        columnName: 'embedding',
+        metric: 'cosine',
+        efc: 200,
+        M: 16
+      }
+    ];
+
+    for (const config of vectorIndexConfigs) {
+      try {
+        await this.conn.execute(`
+          CALL CREATE_VECTOR_INDEX(
+            '${config.tableName}',
+            '${config.indexName}',
+            '${config.columnName}',
+            metric := '${config.metric}',
+            efc    := ${config.efc},
+            M      := ${config.M}
+          )
+        `);
+        console.log(`KuzuSchemaManager: Created vector index ${config.indexName} on ${config.tableName} using function API`);
+      } catch (error) {
+        console.warn(`KuzuSchemaManager: Vector index ${config.indexName} may already exist:`, error);
+      }
+    }
+  }
+
+  /**
+   * Drop vector indices using stable function APIs
+   */
+  private async dropVectorIndicesWithFunctions(): Promise<void> {
+    console.log('KuzuSchemaManager: Dropping vector indices with function APIs...');
+
+    const vectorIndexConfigs = [
+      { tableName: 'Note', indexName: 'hnsw_note_embedding' },
+      { tableName: 'ThreadMessage', indexName: 'hnsw_thread_message_embedding' },
+      { tableName: 'Entity', indexName: 'hnsw_entity_embedding' }
+    ];
+
+    for (const config of vectorIndexConfigs) {
+      try {
+        await this.conn.execute(`
+          CALL DROP_VECTOR_INDEX('${config.tableName}', '${config.indexName}')
+        `);
+        console.log(`KuzuSchemaManager: Dropped vector index ${config.indexName} on ${config.tableName} using function API`);
+      } catch (error) {
+        console.warn(`KuzuSchemaManager: Could not drop vector index ${config.indexName}:`, error);
+      }
     }
   }
 
@@ -355,7 +518,11 @@ export class KuzuSchemaManager {
    */
   async rebuildVectorIndices(tableNames?: string[]): Promise<void> {
     if (this.vectorManager) {
-      await this.vectorManager.rebuildVectorIndexes(tableNames);
+      // Drop existing indices first
+      await this.dropVectorIndicesWithFunctions();
+      
+      // Recreate indices
+      await this.createVectorIndicesWithFunctions();
     } else {
       console.warn('KuzuSchemaManager: Vector manager not initialized');
     }

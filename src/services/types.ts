@@ -43,7 +43,11 @@ export enum EdgeType {
   GLOBAL_TRIPLE_MEMBER = 'global_triple_member',
   // New edge types for parsed elements
   CONTAINS_ENTITY = 'contains_entity',
-  SEMANTIC_RELATION = 'semantic_relation'
+  SEMANTIC_RELATION = 'semantic_relation',
+  // Additional edge types for GraphServiceExtension
+  MENTIONED_IN = 'mentioned_in',
+  SUBJECT_OF = 'subject_of',
+  OBJECT_OF = 'object_of'
 }
 
 export interface GraphMeta {

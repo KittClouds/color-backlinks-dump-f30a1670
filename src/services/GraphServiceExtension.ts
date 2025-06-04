@@ -1,3 +1,4 @@
+
 import { EntityWithReferences } from '@/livestore/queries/entities';
 import { GraphService } from './GraphService';
 import { generateEntityId } from '@/lib/utils/ids';
@@ -37,7 +38,7 @@ export function extendGraphService(service: GraphService): void {
     console.warn('[GraphServiceExtension] getAllEntities() is deprecated. Use LiveStore queries instead.');
     
     const entities: EntityWithReferences[] = [];
-    const entityNodes = this.cy.nodes(`[type = "${NodeType.ENTITY}"]`);
+    const entityNodes = this.getGraph().nodes(`[type = "${NodeType.ENTITY}"]`);
     
     entityNodes.forEach(node => {
       const kind = node.data('kind');
@@ -45,7 +46,7 @@ export function extendGraphService(service: GraphService): void {
       
       if (kind && label) {
         // Count references (nodes that mention this entity)
-        const references = node.connectedEdges(`[label = "${EdgeType.MENTIONED_IN}"]`).length;
+        const references = node.connectedEdges(`[type = "${EdgeType.CONTAINS_ENTITY}"]`).length;
         
         entities.push({
           kind,
@@ -72,12 +73,12 @@ export function extendGraphService(service: GraphService): void {
     const entityId = generateEntityId(kind, label);
     
     // Check if entity already exists
-    if (this.cy.getElementById(entityId).nonempty()) {
+    if (this.getGraph().getElementById(entityId).nonempty()) {
       return false;
     }
     
     // Add entity node with proper type
-    this.cy.add({
+    this.getGraph().add({
       group: 'nodes',
       data: {
         id: entityId,
@@ -95,7 +96,7 @@ export function extendGraphService(service: GraphService): void {
   // Get entity references - simplified to use direct edge queries
   service.getEntityReferences = function(kind: string, label: string): {id: string, title: string}[] {
     const entityId = generateEntityId(kind, label);
-    const entityNode = this.cy.getElementById(entityId);
+    const entityNode = this.getGraph().getElementById(entityId);
     
     if (entityNode.empty()) {
       return [];
@@ -103,15 +104,15 @@ export function extendGraphService(service: GraphService): void {
     
     const references: {id: string, title: string}[] = [];
     
-    // Get all nodes where this entity is mentioned
-    const mentionEdges = entityNode.connectedEdges(`[label = "${EdgeType.MENTIONED_IN}"]`);
+    // Get all nodes where this entity is mentioned using CONTAINS_ENTITY edge
+    const mentionEdges = entityNode.connectedEdges(`[type = "${EdgeType.CONTAINS_ENTITY}"]`);
     
     mentionEdges.forEach(edge => {
-      const targetNode = edge.target();
-      if (targetNode.data('type') === NodeType.NOTE) {
+      const sourceNode = edge.source();
+      if (sourceNode.data('type') === NodeType.NOTE) {
         references.push({
-          id: targetNode.id(),
-          title: targetNode.data('title') || 'Untitled Note'
+          id: sourceNode.id(),
+          title: sourceNode.data('title') || 'Untitled Note'
         });
       }
     });
@@ -122,7 +123,7 @@ export function extendGraphService(service: GraphService): void {
   // Get entity relationships using canonical IDs
   service.getEntityRelationships = function(kind: string, label: string): any[] {
     const entityId = generateEntityId(kind, label);
-    const entityNode = this.cy.getElementById(entityId);
+    const entityNode = this.getGraph().getElementById(entityId);
     
     if (entityNode.empty()) {
       return [];
@@ -130,50 +131,42 @@ export function extendGraphService(service: GraphService): void {
     
     const relationships: any[] = [];
     
-    // Get all triple nodes where this entity is subject
-    const subjectEdges = entityNode.connectedEdges(`[label = "${EdgeType.SUBJECT_OF}"]`);
+    // Get all semantic relation edges where this entity is subject
+    const outgoingEdges = entityNode.connectedEdges(`[type = "${EdgeType.SEMANTIC_RELATION}"]`).filter(edge => 
+      edge.source().id() === entityId
+    );
     
-    subjectEdges.forEach(edge => {
-      const tripleNode = edge.target();
-      if (tripleNode.data('type') === NodeType.TRIPLE) {
-        const predicate = tripleNode.data('predicate');
-        const objectEdges = tripleNode.connectedEdges(`[label = "${EdgeType.OBJECT_OF}"]`);
-        
-        if (objectEdges.nonempty()) {
-          const objectNode = objectEdges.first().source();
-          relationships.push({
-            predicate,
-            direction: 'outgoing',
-            target: {
-              kind: objectNode.data('kind'),
-              label: objectNode.data('label')
-            }
-          });
+    outgoingEdges.forEach(edge => {
+      const targetNode = edge.target();
+      const predicate = edge.data('predicate');
+      
+      relationships.push({
+        predicate,
+        direction: 'outgoing',
+        target: {
+          kind: targetNode.data('kind'),
+          label: targetNode.data('label')
         }
-      }
+      });
     });
     
-    // Get all triple nodes where this entity is object
-    const objectEdges = entityNode.connectedEdges(`[label = "${EdgeType.OBJECT_OF}"]`);
+    // Get all semantic relation edges where this entity is object
+    const incomingEdges = entityNode.connectedEdges(`[type = "${EdgeType.SEMANTIC_RELATION}"]`).filter(edge => 
+      edge.target().id() === entityId
+    );
     
-    objectEdges.forEach(edge => {
-      const tripleNode = edge.target();
-      if (tripleNode.data('type') === NodeType.TRIPLE) {
-        const predicate = tripleNode.data('predicate');
-        const subjectEdges = tripleNode.connectedEdges(`[label = "${EdgeType.SUBJECT_OF}"]`);
-        
-        if (subjectEdges.nonempty()) {
-          const subjectNode = subjectEdges.first().source();
-          relationships.push({
-            predicate,
-            direction: 'incoming',
-            target: {
-              kind: subjectNode.data('kind'),
-              label: subjectNode.data('label')
-            }
-          });
+    incomingEdges.forEach(edge => {
+      const sourceNode = edge.source();
+      const predicate = edge.data('predicate');
+      
+      relationships.push({
+        predicate,
+        direction: 'incoming',
+        target: {
+          kind: sourceNode.data('kind'),
+          label: sourceNode.data('label')
         }
-      }
+      });
     });
     
     return relationships;

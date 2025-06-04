@@ -810,7 +810,7 @@ export class GraphService implements IGraphService {
           attributes: entity.attributes || {},
           createdAt: new Date().toISOString()
         }
-      }) as NodeSingular;
+      });
       console.log(`Created entity node: ${entity.kind}|${entity.label}`);
     } else {
       // Update attributes if provided
@@ -820,7 +820,7 @@ export class GraphService implements IGraphService {
       }
     }
     
-    return entityNode;
+    return entityNode as NodeSingular;
   }
 
   /**

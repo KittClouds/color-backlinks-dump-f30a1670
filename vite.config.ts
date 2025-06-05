@@ -30,8 +30,15 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  // Optimize dependency pre-bundling - merged configuration
   optimizeDeps: {
-    exclude: ['kuzu-wasm']
+    exclude: ['kuzu-wasm'],
+    include: [
+      'react',
+      'react-dom',
+      '@tanstack/react-query',
+      'react-router-dom'
+    ]
   },
   build: {
     // Optimize build for memory efficiency
@@ -71,15 +78,5 @@ export default defineConfig(({ mode }) => ({
       sourcemap: true,
       target: 'esnext'
     })
-  },
-  // Optimize dependency pre-bundling
-  optimizeDeps: {
-    exclude: ['kuzu-wasm'],
-    include: [
-      'react',
-      'react-dom',
-      '@tanstack/react-query',
-      'react-router-dom'
-    ]
   }
 }))
